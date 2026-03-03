@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Mouse cursor trail}",
+            "name": "Debug CursorTrailBar",
+            "target": "CursorTrailBar",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CursorTrailBar"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Mouse cursor trail}",
+            "name": "Release CursorTrailBar",
+            "target": "CursorTrailBar",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CursorTrailBar"
+        }
+    ]
+}

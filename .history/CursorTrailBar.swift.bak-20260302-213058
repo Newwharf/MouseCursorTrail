@@ -1,0 +1,4165 @@
+import AppKit
+import ApplicationServices
+import Carbon
+import QuartzCore
+import ServiceManagement
+
+enum MouseEventKind {
+    case move
+    case leftDown
+    case leftUp
+    case rightDown
+    case rightUp
+    case otherDown
+    case otherUp
+    case scroll(deltaY: CGFloat)
+}
+
+struct MouseSignal {
+    let location: NSPoint
+    let kind: MouseEventKind
+    let timestamp: CFTimeInterval
+}
+
+enum MouseButtonKind: String, CaseIterable {
+    case left
+    case right
+    case middle
+
+    var title: String {
+        switch self {
+        case .left:
+            return "左键"
+        case .right:
+            return "右键"
+        case .middle:
+            return "中键"
+        }
+    }
+}
+
+enum EffectIntensityPreset: String, CaseIterable {
+    case off
+    case low
+    case normal
+    case high
+
+    var title: String {
+        switch self {
+        case .off:
+            return "关闭"
+        case .low:
+            return "低（省资源）"
+        case .normal:
+            return "中（默认）"
+        case .high:
+            return "高（炫彩）"
+        }
+    }
+
+    var particleSpawnMultiplier: CGFloat {
+        switch self {
+        case .off:
+            return 0
+        case .low:
+            return 0.7
+        case .normal:
+            return 1.0
+        case .high:
+            return 1.6
+        }
+    }
+
+    var particleLifetime: CFTimeInterval {
+        switch self {
+        case .off:
+            return 0.01
+        case .low:
+            return 0.35
+        case .normal:
+            return 0.5
+        case .high:
+            return 0.65
+        }
+    }
+
+    var particleSizeRange: ClosedRange<CGFloat> {
+        switch self {
+        case .off:
+            return 0.1...0.1
+        case .low:
+            return 1.2...2.2
+        case .normal:
+            return 1.8...3.2
+        case .high:
+            return 2.2...4.2
+        }
+    }
+
+    var particleSpeedRange: ClosedRange<CGFloat> {
+        switch self {
+        case .off:
+            return 0...0
+        case .low:
+            return 12...35
+        case .normal:
+            return 20...55
+        case .high:
+            return 35...85
+        }
+    }
+
+    var maxParticleCount: Int {
+        switch self {
+        case .off:
+            return 0
+        case .low:
+            return 120
+        case .normal:
+            return 220
+        case .high:
+            return 360
+        }
+    }
+
+    var glowBoost: CGFloat {
+        switch self {
+        case .off:
+            return 0
+        case .low:
+            return 0.8
+        case .normal:
+            return 1.0
+        case .high:
+            return 1.35
+        }
+    }
+
+    var effectsEnabled: Bool {
+        self != .off
+    }
+}
+
+enum TrailRenderStyle: String, CaseIterable {
+    case neon
+    case ribbon
+    case rainbow
+    case lightning
+
+    var title: String {
+        switch self {
+        case .neon: return "双层霓虹"
+        case .ribbon: return "渐隐丝带"
+        case .rainbow: return "彩虹拖尾"
+        case .lightning: return "闪电轨迹"
+        }
+    }
+}
+
+enum TrailEffectStyle: String, CaseIterable {
+    case particles
+    case ink
+    case electric
+
+    var title: String {
+        switch self {
+        case .particles: return "粒子火花"
+        case .ink: return "墨迹扩散"
+        case .electric: return "电弧闪点"
+        }
+    }
+}
+
+enum ClickVisualStyle: String, CaseIterable {
+    case solidPulse
+    case crossFlare
+
+    var title: String {
+        switch self {
+        case .solidPulse: return "实心脉冲"
+        case .crossFlare: return "十字闪光"
+        }
+    }
+}
+
+struct ClickEffectStyle {
+    var isEnabled: Bool
+    var color: NSColor
+}
+
+enum ShortcutTriggerKind: String {
+    case keyboard
+    case mouse
+}
+
+enum ShortcutInputKind {
+    case keyDown
+    case keyUp
+    case leftDown
+    case leftUp
+    case rightDown
+    case rightUp
+    case middleDown
+    case middleUp
+}
+
+struct ShortcutInputEvent {
+    let kind: ShortcutInputKind
+    let keyCode: UInt16?
+    let modifiers: NSEvent.ModifierFlags
+
+    init(kind: ShortcutInputKind, keyCode: UInt16? = nil, modifiers: NSEvent.ModifierFlags) {
+        self.kind = kind
+        self.keyCode = keyCode
+        self.modifiers = modifiers.intersection([.command, .option, .control, .shift])
+    }
+}
+
+struct MagnifierShortcut {
+    var triggerKind: ShortcutTriggerKind
+    var keyCode: UInt16?
+    var mouseButton: MouseButtonKind?
+    var modifiersRaw: UInt
+
+    var modifiers: NSEvent.ModifierFlags {
+        NSEvent.ModifierFlags(rawValue: modifiersRaw).intersection([.command, .option, .control, .shift])
+    }
+
+    static let `default` = MagnifierShortcut(
+        triggerKind: .keyboard,
+        keyCode: UInt16(kVK_ANSI_M),
+        mouseButton: nil,
+        modifiersRaw: NSEvent.ModifierFlags([.command, .option]).rawValue
+    )
+
+    static func capture(from event: NSEvent) -> MagnifierShortcut? {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        switch event.type {
+        case .keyDown:
+            let code = event.keyCode
+            let modifierKeyCodes: Set<UInt16> = [54, 55, 56, 60, 58, 61, 59, 62, 57, 63]
+            guard !modifierKeyCodes.contains(code) else { return nil }
+            return MagnifierShortcut(
+                triggerKind: .keyboard,
+                keyCode: code,
+                mouseButton: nil,
+                modifiersRaw: modifiers.rawValue
+            )
+        case .leftMouseDown:
+            return MagnifierShortcut(
+                triggerKind: .mouse,
+                keyCode: nil,
+                mouseButton: .left,
+                modifiersRaw: modifiers.rawValue
+            )
+        case .rightMouseDown:
+            return MagnifierShortcut(
+                triggerKind: .mouse,
+                keyCode: nil,
+                mouseButton: .right,
+                modifiersRaw: modifiers.rawValue
+            )
+        case .otherMouseDown:
+            return MagnifierShortcut(
+                triggerKind: .mouse,
+                keyCode: nil,
+                mouseButton: .middle,
+                modifiersRaw: modifiers.rawValue
+            )
+        default:
+            return nil
+        }
+    }
+
+    func matchesPress(event: NSEvent) -> Bool {
+        guard let input = shortcutInputEvent(from: event) else { return false }
+        return matchesPress(input: input)
+    }
+
+    func matchesRelease(event: NSEvent) -> Bool {
+        guard let input = shortcutInputEvent(from: event) else { return false }
+        return matchesRelease(input: input)
+    }
+
+    func matchesPress(input: ShortcutInputEvent) -> Bool {
+        guard input.modifiers.isSuperset(of: modifiers) else { return false }
+        switch triggerKind {
+        case .keyboard:
+            return input.kind == .keyDown && input.keyCode == keyCode
+        case .mouse:
+            guard let button = mouseButton else { return false }
+            switch button {
+            case .left:
+                return input.kind == .leftDown
+            case .right:
+                return input.kind == .rightDown
+            case .middle:
+                return input.kind == .middleDown
+            }
+        }
+    }
+
+    func matchesRelease(input: ShortcutInputEvent) -> Bool {
+        switch triggerKind {
+        case .keyboard:
+            return input.kind == .keyUp && input.keyCode == keyCode
+        case .mouse:
+            guard let button = mouseButton else { return false }
+            switch button {
+            case .left:
+                return input.kind == .leftUp
+            case .right:
+                return input.kind == .rightUp
+            case .middle:
+                return input.kind == .middleUp
+            }
+        }
+    }
+
+    var displayText: String {
+        let modifierText = modifiersDisplayString(modifiers)
+        switch triggerKind {
+        case .keyboard:
+            let keyText = keyCodeDisplayName(keyCode ?? 0)
+            return modifierText + keyText
+        case .mouse:
+            let mouseText = switch mouseButton {
+            case .left?:
+                "左键"
+            case .right?:
+                "右键"
+            case .middle?:
+                "中键"
+            case nil:
+                "鼠标键"
+            }
+            return modifierText + mouseText
+        }
+    }
+}
+
+private func shortcutInputEvent(from event: NSEvent) -> ShortcutInputEvent? {
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    switch event.type {
+    case .keyDown:
+        return ShortcutInputEvent(kind: .keyDown, keyCode: event.keyCode, modifiers: modifiers)
+    case .keyUp:
+        return ShortcutInputEvent(kind: .keyUp, keyCode: event.keyCode, modifiers: modifiers)
+    case .leftMouseDown:
+        return ShortcutInputEvent(kind: .leftDown, modifiers: modifiers)
+    case .leftMouseUp:
+        return ShortcutInputEvent(kind: .leftUp, modifiers: modifiers)
+    case .rightMouseDown:
+        return ShortcutInputEvent(kind: .rightDown, modifiers: modifiers)
+    case .rightMouseUp:
+        return ShortcutInputEvent(kind: .rightUp, modifiers: modifiers)
+    case .otherMouseDown:
+        return ShortcutInputEvent(kind: .middleDown, modifiers: modifiers)
+    case .otherMouseUp:
+        return ShortcutInputEvent(kind: .middleUp, modifiers: modifiers)
+    default:
+        return nil
+    }
+}
+
+private func modifiersDisplayString(_ modifiers: NSEvent.ModifierFlags) -> String {
+    var text = ""
+    if modifiers.contains(.control) { text += "⌃" }
+    if modifiers.contains(.option) { text += "⌥" }
+    if modifiers.contains(.shift) { text += "⇧" }
+    if modifiers.contains(.command) { text += "⌘" }
+    return text
+}
+
+private func keyCodeDisplayName(_ keyCode: UInt16) -> String {
+    let map: [UInt16: String] = [
+        UInt16(kVK_ANSI_A): "A", UInt16(kVK_ANSI_B): "B", UInt16(kVK_ANSI_C): "C", UInt16(kVK_ANSI_D): "D",
+        UInt16(kVK_ANSI_E): "E", UInt16(kVK_ANSI_F): "F", UInt16(kVK_ANSI_G): "G", UInt16(kVK_ANSI_H): "H",
+        UInt16(kVK_ANSI_I): "I", UInt16(kVK_ANSI_J): "J", UInt16(kVK_ANSI_K): "K", UInt16(kVK_ANSI_L): "L",
+        UInt16(kVK_ANSI_M): "M", UInt16(kVK_ANSI_N): "N", UInt16(kVK_ANSI_O): "O", UInt16(kVK_ANSI_P): "P",
+        UInt16(kVK_ANSI_Q): "Q", UInt16(kVK_ANSI_R): "R", UInt16(kVK_ANSI_S): "S", UInt16(kVK_ANSI_T): "T",
+        UInt16(kVK_ANSI_U): "U", UInt16(kVK_ANSI_V): "V", UInt16(kVK_ANSI_W): "W", UInt16(kVK_ANSI_X): "X",
+        UInt16(kVK_ANSI_Y): "Y", UInt16(kVK_ANSI_Z): "Z",
+        UInt16(kVK_ANSI_0): "0", UInt16(kVK_ANSI_1): "1", UInt16(kVK_ANSI_2): "2", UInt16(kVK_ANSI_3): "3",
+        UInt16(kVK_ANSI_4): "4", UInt16(kVK_ANSI_5): "5", UInt16(kVK_ANSI_6): "6", UInt16(kVK_ANSI_7): "7",
+        UInt16(kVK_ANSI_8): "8", UInt16(kVK_ANSI_9): "9",
+        UInt16(kVK_Space): "Space", UInt16(kVK_Return): "Return", UInt16(kVK_Tab): "Tab", UInt16(kVK_Escape): "Esc",
+    ]
+    return map[keyCode] ?? "Key\(keyCode)"
+}
+
+private func colorFromHexRGB(_ hex: Int, alpha: CGFloat = 1.0) -> NSColor {
+    let red = CGFloat((hex >> 16) & 0xFF) / 255.0
+    let green = CGFloat((hex >> 8) & 0xFF) / 255.0
+    let blue = CGFloat(hex & 0xFF) / 255.0
+    return NSColor(calibratedRed: red, green: green, blue: blue, alpha: alpha)
+}
+
+struct AppSettings {
+    var isLaunchAtLoginEnabled: Bool
+    var isLoggingEnabled: Bool
+    var isStatusItemVisible: Bool
+    var isTrackingEnabled: Bool
+    var isClickEffectsEnabled: Bool
+    var isMagnifierEnabled: Bool
+    var trailColor: NSColor
+    var trailEffectColor: NSColor
+    var trailStyle: TrailRenderStyle
+    var trailEffectStyle: TrailEffectStyle
+    var rainbowTrailColors: [NSColor]
+    var neonPrimaryColor: NSColor
+    var neonSecondaryColor: NSColor
+    var trailWidth: CGFloat
+    var trailLengthMilliseconds: Double
+    var clickVisualStyle: ClickVisualStyle
+    var clickEffectRadius: CGFloat
+    var magnifierRadius: CGFloat
+    var magnifierZoom: CGFloat
+    var magnifierBorderWidth: CGFloat
+    var magnifierBorderColor: NSColor
+    var magnifierShadowOpacity: CGFloat
+    var showTrailEffectsWhileMagnifierActive: Bool
+    var magnifierShortcut: MagnifierShortcut
+    var intensityPreset: EffectIntensityPreset
+    var clickEffects: [MouseButtonKind: ClickEffectStyle]
+
+    func effectStyle(for button: MouseButtonKind) -> ClickEffectStyle {
+        clickEffects[button] ?? ClickEffectStyle(isEnabled: true, color: .systemBlue)
+    }
+
+    static let `default` = AppSettings(
+        isLaunchAtLoginEnabled: false,
+        isLoggingEnabled: false,
+        isStatusItemVisible: true,
+        isTrackingEnabled: true,
+        isClickEffectsEnabled: true,
+        isMagnifierEnabled: true,
+        trailColor: colorFromHexRGB(0xFFD84A),
+        trailEffectColor: colorFromHexRGB(0xFFB84D),
+        trailStyle: .lightning,
+        trailEffectStyle: .electric,
+        rainbowTrailColors: [.systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue, .systemPurple],
+        neonPrimaryColor: .systemCyan,
+        neonSecondaryColor: .systemPink,
+        trailWidth: 3.4,
+        trailLengthMilliseconds: 420,
+        clickVisualStyle: .crossFlare,
+        clickEffectRadius: 34,
+        magnifierRadius: 120,
+        magnifierZoom: 2.0,
+        magnifierBorderWidth: 3.0,
+        magnifierBorderColor: .white,
+        magnifierShadowOpacity: 0.28,
+        showTrailEffectsWhileMagnifierActive: true,
+        magnifierShortcut: .default,
+        intensityPreset: .high,
+        clickEffects: [
+            .left: ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFE066)),
+            .right: ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFB74D)),
+            .middle: ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFF3B0)),
+        ]
+    )
+
+    mutating func applyThunderFirstFormPreset() {
+        isTrackingEnabled = true
+        isClickEffectsEnabled = true
+        isMagnifierEnabled = true
+        trailStyle = .lightning
+        trailEffectStyle = .electric
+        trailColor = colorFromHexRGB(0xFFD84A)
+        trailEffectColor = colorFromHexRGB(0xFFB84D)
+        trailWidth = 3.4
+        trailLengthMilliseconds = 420
+        intensityPreset = .high
+        clickVisualStyle = .crossFlare
+        clickEffectRadius = 34
+        clickEffects[.left] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFE066))
+        clickEffects[.right] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFB74D))
+        clickEffects[.middle] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFF3B0))
+        showTrailEffectsWhileMagnifierActive = true
+    }
+}
+
+final class SettingsStore {
+    private let defaults = UserDefaults.standard
+    private let launchAtLoginEnabledKey = "launchAtLogin.enabled"
+    private let loggingEnabledKey = "debug.logging.enabled"
+    private let statusItemVisibleKey = "statusItem.visible"
+    private let trackingEnabledKey = "tracking.enabled"
+    private let clickEffectsEnabledKey = "click.effects.enabled"
+    private let magnifierEnabledKey = "magnifier.enabled"
+    private let trailColorKey = "trail.color"
+    private let trailEffectColorKey = "trail.effect.color"
+    private let trailStyleKey = "trail.style"
+    private let trailEffectStyleKey = "trail.effectStyle"
+    private let trailRainbowColorsKey = "trail.rainbow.colors"
+    private let trailNeonPrimaryColorKey = "trail.neon.primary.color"
+    private let trailNeonSecondaryColorKey = "trail.neon.secondary.color"
+    private let trailWidthKey = "trail.width"
+    private let trailLengthMillisecondsKey = "trail.length.ms"
+    private let clickVisualStyleKey = "click.visualStyle"
+    private let clickRadiusKey = "click.radius"
+    private let magnifierRadiusKey = "magnifier.radius"
+    private let magnifierZoomKey = "magnifier.zoom"
+    private let magnifierBorderWidthKey = "magnifier.border.width"
+    private let magnifierBorderColorKey = "magnifier.border.color"
+    private let magnifierShadowOpacityKey = "magnifier.shadow.opacity"
+    private let magnifierShowTrailEffectsKey = "magnifier.showTrailEffects"
+    private let magnifierShortcutKindKey = "magnifier.shortcut.kind"
+    private let magnifierShortcutKeyCodeKey = "magnifier.shortcut.keyCode"
+    private let magnifierShortcutMouseButtonKey = "magnifier.shortcut.mouseButton"
+    private let magnifierShortcutModifiersKey = "magnifier.shortcut.modifiers"
+    private let trailIntensityKey = "trail.intensityPreset"
+    private let clickLeftEnabledKey = "click.left.enabled"
+    private let clickRightEnabledKey = "click.right.enabled"
+    private let clickMiddleEnabledKey = "click.middle.enabled"
+    private let clickLeftColorKey = "click.left.color"
+    private let clickRightColorKey = "click.right.color"
+    private let clickMiddleColorKey = "click.middle.color"
+
+    func loadSettings() -> AppSettings {
+        let fallback = AppSettings.default
+        let isLaunchAtLoginEnabled = defaults.object(forKey: launchAtLoginEnabledKey) as? Bool ?? fallback.isLaunchAtLoginEnabled
+        let isLoggingEnabled = defaults.object(forKey: loggingEnabledKey) as? Bool ?? fallback.isLoggingEnabled
+        let isStatusItemVisible = defaults.object(forKey: statusItemVisibleKey) as? Bool ?? fallback.isStatusItemVisible
+        let isTrackingEnabled = defaults.object(forKey: trackingEnabledKey) as? Bool ?? fallback.isTrackingEnabled
+        let isClickEffectsEnabled = defaults.object(forKey: clickEffectsEnabledKey) as? Bool ?? fallback.isClickEffectsEnabled
+        let isMagnifierEnabled = defaults.object(forKey: magnifierEnabledKey) as? Bool ?? fallback.isMagnifierEnabled
+        let trailStyle = defaults
+            .string(forKey: trailStyleKey)
+            .flatMap(TrailRenderStyle.init(rawValue:))
+            ?? fallback.trailStyle
+        let trailEffectStyle = defaults
+            .string(forKey: trailEffectStyleKey)
+            .flatMap(TrailEffectStyle.init(rawValue:))
+            ?? fallback.trailEffectStyle
+        let clickVisualStyle = defaults
+            .string(forKey: clickVisualStyleKey)
+            .flatMap(ClickVisualStyle.init(rawValue:))
+            ?? fallback.clickVisualStyle
+        let rainbowTrailColors = decodeColorArray(defaults.array(forKey: trailRainbowColorsKey)) ?? fallback.rainbowTrailColors
+        let neonPrimaryColor = decodeColor(defaults.data(forKey: trailNeonPrimaryColorKey)) ?? fallback.neonPrimaryColor
+        let neonSecondaryColor = decodeColor(defaults.data(forKey: trailNeonSecondaryColorKey)) ?? fallback.neonSecondaryColor
+        let trailWidth = clampTrailWidth(defaults.object(forKey: trailWidthKey) as? Double ?? fallback.trailWidth)
+        let trailLengthMilliseconds = clampTrailLengthMilliseconds(
+            defaults.object(forKey: trailLengthMillisecondsKey) as? Double ?? fallback.trailLengthMilliseconds
+        )
+        let clickEffectRadius = clampClickEffectRadius(
+            defaults.object(forKey: clickRadiusKey) as? Double ?? fallback.clickEffectRadius
+        )
+        let magnifierRadius = clampMagnifierRadius(
+            defaults.object(forKey: magnifierRadiusKey) as? Double ?? fallback.magnifierRadius
+        )
+        let magnifierZoom = clampMagnifierZoom(
+            defaults.object(forKey: magnifierZoomKey) as? Double ?? fallback.magnifierZoom
+        )
+        let magnifierBorderWidth = clampMagnifierBorderWidth(
+            defaults.object(forKey: magnifierBorderWidthKey) as? Double ?? fallback.magnifierBorderWidth
+        )
+        let magnifierShadowOpacity = clampMagnifierShadowOpacity(
+            defaults.object(forKey: magnifierShadowOpacityKey) as? Double ?? fallback.magnifierShadowOpacity
+        )
+        let showTrailEffectsWhileMagnifierActive = defaults.object(forKey: magnifierShowTrailEffectsKey) as? Bool
+            ?? fallback.showTrailEffectsWhileMagnifierActive
+        let intensityPreset = defaults
+            .string(forKey: trailIntensityKey)
+            .flatMap(EffectIntensityPreset.init(rawValue:))
+            ?? fallback.intensityPreset
+
+        let shortcutKind = defaults
+            .string(forKey: magnifierShortcutKindKey)
+            .flatMap(ShortcutTriggerKind.init(rawValue:))
+            ?? fallback.magnifierShortcut.triggerKind
+        let shortcutKeyCode = defaults.object(forKey: magnifierShortcutKeyCodeKey) as? UInt16
+        let shortcutMouseButton = defaults
+            .string(forKey: magnifierShortcutMouseButtonKey)
+            .flatMap(MouseButtonKind.init(rawValue:))
+        let shortcutModifiers = defaults.object(forKey: magnifierShortcutModifiersKey) as? UInt
+            ?? fallback.magnifierShortcut.modifiersRaw
+        let magnifierShortcut = MagnifierShortcut(
+            triggerKind: shortcutKind,
+            keyCode: shortcutKind == .keyboard ? (shortcutKeyCode ?? fallback.magnifierShortcut.keyCode) : nil,
+            mouseButton: shortcutKind == .mouse ? (shortcutMouseButton ?? .right) : nil,
+            modifiersRaw: shortcutModifiers
+        )
+
+        var clickEffects: [MouseButtonKind: ClickEffectStyle] = [:]
+        for button in MouseButtonKind.allCases {
+            let (enabledKey, colorKey): (String, String) = switch button {
+            case .left:
+                (clickLeftEnabledKey, clickLeftColorKey)
+            case .right:
+                (clickRightEnabledKey, clickRightColorKey)
+            case .middle:
+                (clickMiddleEnabledKey, clickMiddleColorKey)
+            }
+            let defaultStyle = fallback.effectStyle(for: button)
+            let enabled = defaults.object(forKey: enabledKey) as? Bool ?? defaultStyle.isEnabled
+            let color = decodeColor(defaults.data(forKey: colorKey)) ?? defaultStyle.color
+            clickEffects[button] = ClickEffectStyle(isEnabled: enabled, color: color)
+        }
+
+        return AppSettings(
+            isLaunchAtLoginEnabled: isLaunchAtLoginEnabled,
+            isLoggingEnabled: isLoggingEnabled,
+            isStatusItemVisible: isStatusItemVisible,
+            isTrackingEnabled: isTrackingEnabled,
+            isClickEffectsEnabled: isClickEffectsEnabled,
+            isMagnifierEnabled: isMagnifierEnabled,
+            trailColor: decodeColor(defaults.data(forKey: trailColorKey)) ?? fallback.trailColor,
+            trailEffectColor: decodeColor(defaults.data(forKey: trailEffectColorKey)) ?? fallback.trailEffectColor,
+            trailStyle: trailStyle,
+            trailEffectStyle: trailEffectStyle,
+            rainbowTrailColors: rainbowTrailColors,
+            neonPrimaryColor: neonPrimaryColor,
+            neonSecondaryColor: neonSecondaryColor,
+            trailWidth: trailWidth,
+            trailLengthMilliseconds: trailLengthMilliseconds,
+            clickVisualStyle: clickVisualStyle,
+            clickEffectRadius: clickEffectRadius,
+            magnifierRadius: magnifierRadius,
+            magnifierZoom: magnifierZoom,
+            magnifierBorderWidth: magnifierBorderWidth,
+            magnifierBorderColor: decodeColor(defaults.data(forKey: magnifierBorderColorKey)) ?? fallback.magnifierBorderColor,
+            magnifierShadowOpacity: magnifierShadowOpacity,
+            showTrailEffectsWhileMagnifierActive: showTrailEffectsWhileMagnifierActive,
+            magnifierShortcut: magnifierShortcut,
+            intensityPreset: intensityPreset,
+            clickEffects: clickEffects
+        )
+    }
+
+    func saveSettings(_ settings: AppSettings) {
+        defaults.set(settings.isLaunchAtLoginEnabled, forKey: launchAtLoginEnabledKey)
+        defaults.set(settings.isLoggingEnabled, forKey: loggingEnabledKey)
+        defaults.set(settings.isStatusItemVisible, forKey: statusItemVisibleKey)
+        defaults.set(settings.isTrackingEnabled, forKey: trackingEnabledKey)
+        defaults.set(settings.isClickEffectsEnabled, forKey: clickEffectsEnabledKey)
+        defaults.set(settings.isMagnifierEnabled, forKey: magnifierEnabledKey)
+        defaults.set(Double(settings.trailWidth), forKey: trailWidthKey)
+        defaults.set(settings.trailStyle.rawValue, forKey: trailStyleKey)
+        defaults.set(settings.trailEffectStyle.rawValue, forKey: trailEffectStyleKey)
+        defaults.set(settings.clickVisualStyle.rawValue, forKey: clickVisualStyleKey)
+        defaults.set(settings.rainbowTrailColors.compactMap(encodeColor), forKey: trailRainbowColorsKey)
+        defaults.set(encodeColor(settings.neonPrimaryColor), forKey: trailNeonPrimaryColorKey)
+        defaults.set(encodeColor(settings.neonSecondaryColor), forKey: trailNeonSecondaryColorKey)
+        defaults.set(settings.trailLengthMilliseconds, forKey: trailLengthMillisecondsKey)
+        defaults.set(Double(settings.clickEffectRadius), forKey: clickRadiusKey)
+        defaults.set(Double(settings.magnifierRadius), forKey: magnifierRadiusKey)
+        defaults.set(Double(settings.magnifierZoom), forKey: magnifierZoomKey)
+        defaults.set(Double(settings.magnifierBorderWidth), forKey: magnifierBorderWidthKey)
+        defaults.set(encodeColor(settings.magnifierBorderColor), forKey: magnifierBorderColorKey)
+        defaults.set(Double(settings.magnifierShadowOpacity), forKey: magnifierShadowOpacityKey)
+        defaults.set(settings.showTrailEffectsWhileMagnifierActive, forKey: magnifierShowTrailEffectsKey)
+        defaults.set(settings.magnifierShortcut.triggerKind.rawValue, forKey: magnifierShortcutKindKey)
+        defaults.set(settings.magnifierShortcut.keyCode, forKey: magnifierShortcutKeyCodeKey)
+        defaults.set(settings.magnifierShortcut.mouseButton?.rawValue, forKey: magnifierShortcutMouseButtonKey)
+        defaults.set(settings.magnifierShortcut.modifiersRaw, forKey: magnifierShortcutModifiersKey)
+        defaults.set(settings.intensityPreset.rawValue, forKey: trailIntensityKey)
+        defaults.set(encodeColor(settings.trailColor), forKey: trailColorKey)
+        defaults.set(encodeColor(settings.trailEffectColor), forKey: trailEffectColorKey)
+
+        defaults.set(settings.effectStyle(for: .left).isEnabled, forKey: clickLeftEnabledKey)
+        defaults.set(settings.effectStyle(for: .right).isEnabled, forKey: clickRightEnabledKey)
+        defaults.set(settings.effectStyle(for: .middle).isEnabled, forKey: clickMiddleEnabledKey)
+        defaults.set(encodeColor(settings.effectStyle(for: .left).color), forKey: clickLeftColorKey)
+        defaults.set(encodeColor(settings.effectStyle(for: .right).color), forKey: clickRightColorKey)
+        defaults.set(encodeColor(settings.effectStyle(for: .middle).color), forKey: clickMiddleColorKey)
+    }
+
+    private func encodeColor(_ color: NSColor) -> Data? {
+        try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false)
+    }
+
+    private func decodeColor(_ data: Data?) -> NSColor? {
+        guard let data else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
+    }
+
+    private func decodeColorArray(_ value: [Any]?) -> [NSColor]? {
+        guard let value else { return nil }
+        let colors = value.compactMap { item -> NSColor? in
+            guard let data = item as? Data else { return nil }
+            return decodeColor(data)
+        }
+        return colors.count >= 2 ? colors : nil
+    }
+}
+
+final class AppLogger: @unchecked Sendable {
+    static let shared = AppLogger()
+
+    private let queue = DispatchQueue(label: "com.lihan.cursortrailbar.logger", qos: .utility)
+    private let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private let logsDirectoryURL: URL
+    private let logFileURL: URL
+    private var isEnabled = true
+
+    private init() {
+        let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library")
+        logsDirectoryURL = base.appendingPathComponent("Logs/CursorTrailBar", isDirectory: true)
+        logFileURL = logsDirectoryURL.appendingPathComponent("app.log")
+        queue.async { [logsDirectoryURL] in
+            try? FileManager.default.createDirectory(at: logsDirectoryURL, withIntermediateDirectories: true)
+        }
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        queue.async {
+            if self.isEnabled == enabled {
+                return
+            }
+            self.isEnabled = enabled
+            self.write("logger \(enabled ? "enabled" : "disabled")", force: true)
+        }
+    }
+
+    func log(_ message: String) {
+        queue.async {
+            self.write(message, force: false)
+        }
+    }
+
+    func logPath() -> String {
+        logFileURL.path
+    }
+
+    private func write(_ message: String, force: Bool) {
+        guard force || isEnabled else { return }
+        let line = "[\(formatter.string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        try? FileManager.default.createDirectory(at: logsDirectoryURL, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: logFileURL.path) {
+            if
+                let handle = try? FileHandle(forWritingTo: logFileURL)
+            {
+                do {
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: data)
+                    try handle.close()
+                } catch {
+                    try? handle.close()
+                }
+            }
+        } else {
+            try? data.write(to: logFileURL, options: .atomic)
+        }
+    }
+}
+
+@MainActor
+final class LaunchAtLoginManager {
+    @discardableResult
+    func setEnabled(_ enabled: Bool) -> Bool {
+        guard #available(macOS 13.0, *) else { return false }
+        do {
+            if enabled {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
+                }
+            } else {
+                if SMAppService.mainApp.status == .enabled {
+                    try SMAppService.mainApp.unregister()
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func currentStatus() -> SMAppService.Status? {
+        guard #available(macOS 13.0, *) else { return nil }
+        return SMAppService.mainApp.status
+    }
+
+    func isEnabled() -> Bool {
+        guard #available(macOS 13.0, *) else { return false }
+        return SMAppService.mainApp.status == .enabled
+    }
+}
+
+@MainActor
+final class HotKeyManager {
+    private static let hotKeySignature = fourCharCode("CTRB")
+    private static let hotKeyID: UInt32 = 1
+
+    var onToggle: (() -> Void)?
+
+    private var eventHandlerRef: EventHandlerRef?
+    private var hotKeyRef: EventHotKeyRef?
+
+    var displayLabel: String {
+        "⌃⌥⌘T"
+    }
+
+    @discardableResult
+    func registerHotKey() -> Bool {
+        guard eventHandlerRef == nil, hotKeyRef == nil else { return true }
+
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: OSType(kEventHotKeyPressed)
+        )
+
+        let installStatus = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, eventRef, userData in
+                guard let eventRef, let userData else { return noErr }
+
+                var hotKeyData = EventHotKeyID()
+                let parameterStatus = GetEventParameter(
+                    eventRef,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyData
+                )
+                guard parameterStatus == noErr else { return parameterStatus }
+
+                let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+                if hotKeyData.signature == HotKeyManager.hotKeySignature, hotKeyData.id == HotKeyManager.hotKeyID {
+                    manager.onToggle?()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+            &eventHandlerRef
+        )
+        guard installStatus == noErr else { return false }
+
+        let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: Self.hotKeyID)
+        let modifiers = UInt32(controlKey) | UInt32(optionKey) | UInt32(cmdKey)
+        let registerStatus = RegisterEventHotKey(
+            UInt32(kVK_ANSI_T),
+            modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        if registerStatus != noErr {
+            unregisterHotKey()
+            return false
+        }
+        return true
+    }
+
+    func unregisterHotKey() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+            self.eventHandlerRef = nil
+        }
+    }
+}
+
+private func fourCharCode(_ string: String) -> OSType {
+    var result: OSType = 0
+    for scalar in string.unicodeScalars.prefix(4) {
+        result = (result << 8) + OSType(scalar.value)
+    }
+    return result
+}
+
+@MainActor
+final class GlobalShortcutMonitor {
+    var onInput: ((ShortcutInputEvent) -> Void)?
+
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
+    @discardableResult
+    func start() -> Bool {
+        guard eventTap == nil else { return true }
+
+        if !CGPreflightListenEventAccess() {
+            AppLogger.shared.log("global shortcut monitor start without input monitoring permission")
+        }
+
+        let eventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseUp.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseUp.rawValue) |
+            (1 << CGEventType.tapDisabledByTimeout.rawValue) |
+            (1 << CGEventType.tapDisabledByUserInput.rawValue)
+
+        let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        guard
+            let tap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: CGEventMask(eventMask),
+                callback: { proxy, type, event, userInfo in
+                    guard let userInfo else { return Unmanaged.passUnretained(event) }
+                    let monitor = Unmanaged<GlobalShortcutMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+                    monitor.handle(proxy: proxy, type: type, event: event)
+                    return Unmanaged.passUnretained(event)
+                },
+                userInfo: userInfo
+            )
+        else {
+            return false
+        }
+
+        eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        runLoopSource = source
+        if let source {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+
+    func stop() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        runLoopSource = nil
+        eventTap = nil
+    }
+
+    private func handle(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let eventTap {
+                CGEvent.tapEnable(tap: eventTap, enable: true)
+            }
+            return
+        }
+
+        guard let input = mapInput(type: type, event: event) else { return }
+        onInput?(input)
+    }
+
+    private func mapInput(type: CGEventType, event: CGEvent) -> ShortcutInputEvent? {
+        let modifiers = modifierFlags(from: event.flags)
+
+        switch type {
+        case .keyDown:
+            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+            return ShortcutInputEvent(kind: .keyDown, keyCode: keyCode, modifiers: modifiers)
+        case .keyUp:
+            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+            return ShortcutInputEvent(kind: .keyUp, keyCode: keyCode, modifiers: modifiers)
+        case .leftMouseDown:
+            return ShortcutInputEvent(kind: .leftDown, modifiers: modifiers)
+        case .leftMouseUp:
+            return ShortcutInputEvent(kind: .leftUp, modifiers: modifiers)
+        case .rightMouseDown:
+            return ShortcutInputEvent(kind: .rightDown, modifiers: modifiers)
+        case .rightMouseUp:
+            return ShortcutInputEvent(kind: .rightUp, modifiers: modifiers)
+        case .otherMouseDown:
+            return ShortcutInputEvent(kind: .middleDown, modifiers: modifiers)
+        case .otherMouseUp:
+            return ShortcutInputEvent(kind: .middleUp, modifiers: modifiers)
+        default:
+            return nil
+        }
+    }
+
+    private func modifierFlags(from flags: CGEventFlags) -> NSEvent.ModifierFlags {
+        var result: NSEvent.ModifierFlags = []
+        if flags.contains(.maskCommand) { result.insert(.command) }
+        if flags.contains(.maskAlternate) { result.insert(.option) }
+        if flags.contains(.maskControl) { result.insert(.control) }
+        if flags.contains(.maskShift) { result.insert(.shift) }
+        return result
+    }
+}
+
+final class GlobalScrollInterceptor {
+    var onScroll: ((MouseSignal) -> Void)?
+
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+    private var shouldConsumeScroll = false
+    private var lastConsumedScrollLogTimestamp: CFTimeInterval = 0
+    private var lastPassthroughScrollLogTimestamp: CFTimeInterval = 0
+
+    func setConsumesScroll(_ consume: Bool) {
+        if shouldConsumeScroll != consume {
+            AppLogger.shared.log("scroll interceptor consume state changed: \(shouldConsumeScroll) -> \(consume)")
+        }
+        shouldConsumeScroll = consume
+    }
+
+    var isRunning: Bool {
+        eventTap != nil
+    }
+
+    @discardableResult
+    func start() -> Bool {
+        guard eventTap == nil else { return true }
+
+        let listenGranted = CGPreflightListenEventAccess()
+        guard listenGranted else {
+            AppLogger.shared.log(
+                "scroll interceptor start skipped due to permission: listenGranted=\(listenGranted)"
+            )
+            return false
+        }
+
+        let eventMask =
+            (1 << CGEventType.scrollWheel.rawValue) |
+            (1 << CGEventType.tapDisabledByTimeout.rawValue) |
+            (1 << CGEventType.tapDisabledByUserInput.rawValue)
+
+        let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        let callback: CGEventTapCallBack = { proxy, type, event, userInfo in
+            guard let userInfo else { return Unmanaged.passUnretained(event) }
+            let interceptor = Unmanaged<GlobalScrollInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
+            return interceptor.handle(proxy: proxy, type: type, event: event)
+        }
+
+        let attempts: [(CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, String)] = [
+            (.cghidEventTap, .headInsertEventTap, .defaultTap, "cghid/head/default"),
+            (.cghidEventTap, .tailAppendEventTap, .defaultTap, "cghid/tail/default"),
+            (.cgSessionEventTap, .headInsertEventTap, .defaultTap, "session/head/default"),
+            (.cgSessionEventTap, .tailAppendEventTap, .defaultTap, "session/tail/default"),
+            (.cgAnnotatedSessionEventTap, .headInsertEventTap, .defaultTap, "annotated/head/default"),
+            (.cgAnnotatedSessionEventTap, .tailAppendEventTap, .defaultTap, "annotated/tail/default"),
+        ]
+
+        var tapSource = "none"
+        var tap: CFMachPort?
+        for (location, placement, options, label) in attempts {
+            if let created = CGEvent.tapCreate(
+                tap: location,
+                place: placement,
+                options: options,
+                eventsOfInterest: CGEventMask(eventMask),
+                callback: callback,
+                userInfo: userInfo
+            ) {
+                tapSource = label
+                tap = created
+                break
+            }
+            AppLogger.shared.log("scroll interceptor tap attempt failed: \(label)")
+        }
+
+        if tap == nil {
+            for (location, placement, options, label) in attempts {
+                if let created = CGEvent.tapCreate(
+                    tap: location,
+                    place: placement,
+                    options: options,
+                    eventsOfInterest: CGEventMask(eventMask),
+                    callback: callback,
+                    userInfo: userInfo
+                ) {
+                    tapSource = label + " (after-permission)"
+                    tap = created
+                    break
+                }
+                AppLogger.shared.log("scroll interceptor tap retry failed: \(label)")
+            }
+        }
+
+        guard let tap else {
+            let listen = CGPreflightListenEventAccess()
+            let ax = AXIsProcessTrusted()
+            AppLogger.shared.log("scroll interceptor failed to start. listenAccess=\(listen), accessibilityTrusted=\(ax)")
+            return false
+        }
+
+        eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        runLoopSource = source
+        if let source {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        AppLogger.shared.log("scroll interceptor started with \(tapSource)")
+        return true
+    }
+
+    func stop() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        runLoopSource = nil
+        eventTap = nil
+        AppLogger.shared.log("scroll interceptor stopped")
+    }
+
+    private func handle(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let eventTap {
+                CGEvent.tapEnable(tap: eventTap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard type == .scrollWheel else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let location = event.location
+        let lineDeltaY = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
+        let pointDeltaY = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
+        let sourceDeltaY = lineDeltaY != 0 ? lineDeltaY : pointDeltaY
+        let normalizedDeltaY = abs(sourceDeltaY) < 1 ? sourceDeltaY * 10 : sourceDeltaY
+        let deltaY = CGFloat(normalizedDeltaY)
+        let signal = MouseSignal(
+            location: NSPoint(x: location.x, y: location.y),
+            kind: .scroll(deltaY: deltaY),
+            timestamp: CACurrentMediaTime()
+        )
+
+        onScroll?(signal)
+
+        let now = CACurrentMediaTime()
+        if shouldConsumeScroll {
+            if now - lastConsumedScrollLogTimestamp > 0.22 {
+                AppLogger.shared.log(
+                    "scroll intercepted and consumed (line=\(rounded(lineDeltaY, scale: 10)), point=\(rounded(pointDeltaY, scale: 10)), normalized=\(rounded(Double(deltaY), scale: 10)))"
+                )
+                lastConsumedScrollLogTimestamp = now
+            }
+            return nil
+        }
+        if now - lastPassthroughScrollLogTimestamp > 0.8 {
+            AppLogger.shared.log(
+                "scroll passed through (line=\(rounded(lineDeltaY, scale: 10)), point=\(rounded(pointDeltaY, scale: 10)), normalized=\(rounded(Double(deltaY), scale: 10)))"
+            )
+            lastPassthroughScrollLogTimestamp = now
+        }
+        return Unmanaged.passUnretained(event)
+    }
+}
+
+private func clampTrailWidth(_ value: Double) -> CGFloat {
+    CGFloat(min(300.0, max(0.1, value)))
+}
+
+private func clampTrailLengthMilliseconds(_ value: Double) -> Double {
+    min(120_000, max(10, value))
+}
+
+private func clampClickEffectRadius(_ value: Double) -> CGFloat {
+    CGFloat(min(600.0, max(1.0, value)))
+}
+
+private func clampMagnifierRadius(_ value: Double) -> CGFloat {
+    CGFloat(min(1200.0, max(20.0, value)))
+}
+
+private func clampMagnifierZoom(_ value: Double) -> CGFloat {
+    CGFloat(min(8.0, max(1.0, value)))
+}
+
+private func clampMagnifierBorderWidth(_ value: Double) -> CGFloat {
+    CGFloat(min(30.0, max(0.0, value)))
+}
+
+private func clampMagnifierShadowOpacity(_ value: Double) -> CGFloat {
+    CGFloat(min(1.0, max(0.0, value)))
+}
+
+private func rounded(_ value: Double, scale: Double = 100) -> Double {
+    (value * scale).rounded() / scale
+}
+
+@MainActor
+final class MouseMonitor {
+    var onEvent: ((MouseSignal) -> Void)?
+    var onRawEvent: ((NSEvent) -> Void)?
+
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
+
+    private let eventMask: NSEvent.EventTypeMask = [
+        .mouseMoved,
+        .leftMouseDown,
+        .leftMouseUp,
+        .rightMouseDown,
+        .rightMouseUp,
+        .otherMouseDown,
+        .otherMouseUp,
+        .leftMouseDragged,
+        .rightMouseDragged,
+        .otherMouseDragged,
+        .keyDown,
+        .keyUp,
+        .flagsChanged,
+    ]
+
+    func start() {
+        guard globalMonitor == nil, localMonitor == nil else { return }
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
+            self?.dispatchHandle(event)
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
+            self?.dispatchHandle(event)
+            return event
+        }
+    }
+
+    func stop() {
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
+        }
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+    }
+
+    private func handle(event: NSEvent) {
+        onRawEvent?(event)
+        guard let kind = map(event: event) else { return }
+        let location = NSEvent.mouseLocation
+        let signal = MouseSignal(location: location, kind: kind, timestamp: CACurrentMediaTime())
+        onEvent?(signal)
+    }
+
+    private func dispatchHandle(_ event: NSEvent) {
+        if Thread.isMainThread {
+            handle(event: event)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.handle(event: event)
+            }
+        }
+    }
+
+    private func map(event: NSEvent) -> MouseEventKind? {
+        switch event.type {
+        case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            return .move
+        case .leftMouseDown:
+            return .leftDown
+        case .leftMouseUp:
+            return .leftUp
+        case .rightMouseDown:
+            return .rightDown
+        case .rightMouseUp:
+            return .rightUp
+        case .otherMouseDown:
+            return .otherDown
+        case .otherMouseUp:
+            return .otherUp
+        default:
+            return nil
+        }
+    }
+}
+
+@MainActor
+final class TrailOverlayView: NSView {
+    private struct MovePoint {
+        let point: NSPoint
+        let timestamp: CFTimeInterval
+    }
+
+    private struct TrailSample {
+        let point: NSPoint
+        let alpha: CGFloat
+        let index: Int
+    }
+
+    private struct Pulse {
+        enum Kind {
+            case circle
+            case cross
+        }
+
+        let point: NSPoint
+        let color: NSColor
+        let startRadius: CGFloat
+        let endRadius: CGFloat
+        let lineWidth: CGFloat
+        let filled: Bool
+        let kind: Kind
+        let lifetime: CFTimeInterval
+        let timestamp: CFTimeInterval
+    }
+
+    private struct Particle {
+        let point: NSPoint
+        let velocity: CGVector
+        let size: CGFloat
+        let color: NSColor
+        let lifetime: CFTimeInterval
+        let timestamp: CFTimeInterval
+    }
+
+    private struct ClickAccent {
+        enum Kind {
+            case cross
+        }
+
+        let point: NSPoint
+        let color: NSColor
+        let radius: CGFloat
+        let kind: Kind
+        let lifetime: CFTimeInterval
+        let timestamp: CFTimeInterval
+    }
+
+    private struct DashBurst {
+        let start: NSPoint
+        let end: NSPoint
+        let coreColor: NSColor
+        let branchColor: NSColor
+        let lineWidth: CGFloat
+        let branchCount: Int
+        let lifetime: CFTimeInterval
+        let timestamp: CFTimeInterval
+    }
+
+    private enum PressedButton {
+        case none
+        case left
+        case right
+        case middle
+    }
+
+    private var movePoints: [MovePoint] = []
+    private var pulses: [Pulse] = []
+    private var particles: [Particle] = []
+    private var clickAccents: [ClickAccent] = []
+    private var dashBursts: [DashBurst] = []
+    private var cursorPoint: NSPoint?
+    private var lastMovePoint: NSPoint?
+    private var lastMoveTimestamp: CFTimeInterval?
+    private var lastAcceptedMoveTimestamp: CFTimeInterval = 0
+    private var lastDashBurstTimestamp: CFTimeInterval = -1
+    private var pressedButton: PressedButton = .none
+    private var refreshTimer: Timer?
+    private var cachedMagnifierImage: CGImage?
+    private var lastMagnifierCaptureTimestamp: CFTimeInterval = 0
+    private var isActive = true
+    private var trailColor: NSColor = AppSettings.default.trailColor
+    private var trailEffectColor: NSColor = AppSettings.default.trailEffectColor
+    private var trailStyle: TrailRenderStyle = AppSettings.default.trailStyle
+    private var trailEffectStyle: TrailEffectStyle = AppSettings.default.trailEffectStyle
+    private var rainbowTrailColors: [NSColor] = AppSettings.default.rainbowTrailColors
+    private var neonPrimaryColor: NSColor = AppSettings.default.neonPrimaryColor
+    private var neonSecondaryColor: NSColor = AppSettings.default.neonSecondaryColor
+    private var trailLineWidth: CGFloat = AppSettings.default.trailWidth
+    private var trailLengthMilliseconds: Double = AppSettings.default.trailLengthMilliseconds
+    private var clickVisualStyle: ClickVisualStyle = AppSettings.default.clickVisualStyle
+    private var clickEffectRadius: CGFloat = AppSettings.default.clickEffectRadius
+    private var magnifierRadius: CGFloat = AppSettings.default.magnifierRadius
+    private var magnifierZoom: CGFloat = AppSettings.default.magnifierZoom
+    private var configuredMagnifierZoom: CGFloat = AppSettings.default.magnifierZoom
+    private var magnifierBorderWidth: CGFloat = AppSettings.default.magnifierBorderWidth
+    private var magnifierBorderColor: NSColor = AppSettings.default.magnifierBorderColor
+    private var magnifierShadowOpacity: CGFloat = AppSettings.default.magnifierShadowOpacity
+    private var showTrailEffectsWhileMagnifierActive = AppSettings.default.showTrailEffectsWhileMagnifierActive
+    private var isClickEffectsEnabled = AppSettings.default.isClickEffectsEnabled
+    private var isMagnifierEnabled = AppSettings.default.isMagnifierEnabled
+    private var isMagnifierActive = false
+    private var intensityPreset: EffectIntensityPreset = AppSettings.default.intensityPreset
+    private var clickEffects: [MouseButtonKind: ClickEffectStyle] = AppSettings.default.clickEffects
+    private var hadAnimatedContentOnLastTick = false
+    private var lastMagnifierZoomLogTimestamp: CFTimeInterval = 0
+    private var lastMagnifierCenterLogTimestamp: CFTimeInterval = 0
+
+    private var trailLengthSeconds: CFTimeInterval {
+        trailLengthMilliseconds / 1000
+    }
+
+    private let minimumMoveSampleInterval: CFTimeInterval = 1.0 / 120.0
+    private let minimumMoveDistance: CGFloat = 1.2
+    private let refreshInterval: CFTimeInterval = 1.0 / 45.0
+    private let magnifierCaptureInterval: CFTimeInterval = 1.0 / 30.0
+    private let thunderDashVelocityThreshold: CGFloat = 1800
+    private let thunderDashCooldown: CFTimeInterval = 0.45
+    private let thunderDashBurstDuration: CFTimeInterval = 0.17
+    private let thunderDashAfterglowDuration: CFTimeInterval = 0.28
+    private let thunderDashJitterAmplitude: CGFloat = 5.0
+
+    private var maxMoveCount: Int {
+        max(80, Int(trailLengthSeconds * 260))
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        startRefreshLoop()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func setActive(_ active: Bool) {
+        isActive = active
+        if !active {
+            movePoints.removeAll()
+            pulses.removeAll()
+            particles.removeAll()
+            clickAccents.removeAll()
+            dashBursts.removeAll()
+            pressedButton = .none
+            cachedMagnifierImage = nil
+            hadAnimatedContentOnLastTick = false
+            lastMoveTimestamp = nil
+            lastDashBurstTimestamp = -1
+            needsDisplay = true
+        }
+    }
+
+    func clear() {
+        movePoints.removeAll()
+        pulses.removeAll()
+        particles.removeAll()
+        clickAccents.removeAll()
+        dashBursts.removeAll()
+        cursorPoint = nil
+        lastMovePoint = nil
+        lastMoveTimestamp = nil
+        lastAcceptedMoveTimestamp = 0
+        lastDashBurstTimestamp = -1
+        pressedButton = .none
+        cachedMagnifierImage = nil
+        hadAnimatedContentOnLastTick = false
+        needsDisplay = true
+    }
+
+    func applySettings(_ settings: AppSettings) {
+        trailColor = settings.trailColor
+        trailEffectColor = settings.trailEffectColor
+        trailStyle = settings.trailStyle
+        trailEffectStyle = settings.trailEffectStyle
+        rainbowTrailColors = settings.rainbowTrailColors
+        neonPrimaryColor = settings.neonPrimaryColor
+        neonSecondaryColor = settings.neonSecondaryColor
+        trailLineWidth = settings.trailWidth
+        trailLengthMilliseconds = settings.trailLengthMilliseconds
+        clickVisualStyle = settings.clickVisualStyle
+        clickEffectRadius = settings.clickEffectRadius
+        magnifierRadius = settings.magnifierRadius
+        configuredMagnifierZoom = settings.magnifierZoom
+        if !isMagnifierActive {
+            magnifierZoom = configuredMagnifierZoom
+        }
+        magnifierBorderWidth = settings.magnifierBorderWidth
+        magnifierBorderColor = settings.magnifierBorderColor
+        magnifierShadowOpacity = settings.magnifierShadowOpacity
+        showTrailEffectsWhileMagnifierActive = settings.showTrailEffectsWhileMagnifierActive
+        isClickEffectsEnabled = settings.isClickEffectsEnabled
+        isMagnifierEnabled = settings.isMagnifierEnabled
+        intensityPreset = settings.intensityPreset
+        clickEffects = settings.clickEffects
+        if !isMagnifierEnabled {
+            isMagnifierActive = false
+            cachedMagnifierImage = nil
+        }
+        if !effectStyle(for: pressedButton).isEnabled {
+            pressedButton = .none
+        }
+        needsDisplay = true
+    }
+
+    func setMagnifierActive(_ active: Bool) {
+        isMagnifierActive = isMagnifierEnabled && active
+        magnifierZoom = configuredMagnifierZoom
+        if !isMagnifierActive {
+            cachedMagnifierImage = nil
+            lastMagnifierCaptureTimestamp = 0
+        }
+        if active, !showTrailEffectsWhileMagnifierActive {
+            movePoints.removeAll()
+            pulses.removeAll()
+            particles.removeAll()
+            clickAccents.removeAll()
+            pressedButton = .none
+        }
+        needsDisplay = true
+    }
+
+    func shutdown() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        clear()
+    }
+
+    func process(signal: MouseSignal, in screenFrame: NSRect) {
+        guard screenFrame.contains(signal.location) else { return }
+
+        let localPoint = NSPoint(
+            x: signal.location.x - screenFrame.origin.x,
+            y: signal.location.y - screenFrame.origin.y
+        )
+        if case .scroll = signal.kind {
+            // 滚轮仅用于临时缩放，不应导致放大镜中心抖动/跳动
+        } else {
+            cursorPoint = localPoint
+        }
+
+        guard isActive else {
+            lastMovePoint = localPoint
+            lastMoveTimestamp = signal.timestamp
+            needsDisplay = true
+            return
+        }
+
+        if isMagnifierActive, !showTrailEffectsWhileMagnifierActive {
+            switch signal.kind {
+            case .move:
+                lastMovePoint = localPoint
+                lastMoveTimestamp = signal.timestamp
+            case .scroll(let deltaY):
+                applyTemporaryMagnifierZoom(deltaY: deltaY)
+            default:
+                pressedButton = .none
+            }
+            needsDisplay = true
+            return
+        }
+
+        switch signal.kind {
+        case .move:
+            let previous = lastMovePoint ?? localPoint
+            let distance = hypot(localPoint.x - previous.x, localPoint.y - previous.y)
+            let interval = signal.timestamp - lastAcceptedMoveTimestamp
+            let previousTimestamp = lastMoveTimestamp ?? (signal.timestamp - minimumMoveSampleInterval)
+            let deltaTime = max(1.0 / 600.0, signal.timestamp - previousTimestamp)
+            let velocity = distance / CGFloat(deltaTime)
+            if interval < minimumMoveSampleInterval, distance < minimumMoveDistance {
+                return
+            }
+            lastAcceptedMoveTimestamp = signal.timestamp
+            movePoints.append(MovePoint(point: localPoint, timestamp: signal.timestamp))
+            if movePoints.count > maxMoveCount {
+                movePoints.removeFirst(movePoints.count - maxMoveCount)
+            }
+            emitTrailEffects(from: lastMovePoint ?? localPoint, to: localPoint, timestamp: signal.timestamp)
+            emitThunderDashIfNeeded(from: previous, to: localPoint, velocity: velocity, timestamp: signal.timestamp)
+            lastMovePoint = localPoint
+            lastMoveTimestamp = signal.timestamp
+        case .leftDown:
+            handleButtonDown(.left, point: localPoint, timestamp: signal.timestamp)
+        case .leftUp:
+            handleButtonUp(.left, point: localPoint, timestamp: signal.timestamp)
+        case .rightDown:
+            handleButtonDown(.right, point: localPoint, timestamp: signal.timestamp)
+        case .rightUp:
+            handleButtonUp(.right, point: localPoint, timestamp: signal.timestamp)
+        case .otherDown:
+            handleButtonDown(.middle, point: localPoint, timestamp: signal.timestamp)
+        case .otherUp:
+            handleButtonUp(.middle, point: localPoint, timestamp: signal.timestamp)
+        case .scroll(let deltaY):
+            applyTemporaryMagnifierZoom(deltaY: deltaY)
+        }
+
+        needsDisplay = true
+    }
+
+    private func applyTemporaryMagnifierZoom(deltaY: CGFloat) {
+        guard isMagnifierActive else { return }
+        let centerBefore = cursorPoint
+        let sensitivity: CGFloat = 0.018 * 1.5
+        let step = deltaY * sensitivity
+        guard abs(step) > 0.0001 else { return }
+        let before = magnifierZoom
+        magnifierZoom = clampMagnifierZoom(Double(magnifierZoom + step))
+        cachedMagnifierImage = nil
+        lastMagnifierCaptureTimestamp = 0
+        let now = CACurrentMediaTime()
+        if now - lastMagnifierZoomLogTimestamp > 0.18 {
+            AppLogger.shared.log(
+                "magnifier temporary zoom updated by scroll: \(rounded(Double(before)))x -> \(rounded(Double(magnifierZoom)))x (deltaY=\(rounded(Double(deltaY), scale: 10)))"
+            )
+            lastMagnifierZoomLogTimestamp = now
+        }
+        if now - lastMagnifierCenterLogTimestamp > 0.18 {
+            let beforeText = centerBefore.map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "nil"
+            let afterText = cursorPoint.map { "(\(Int($0.x)),\(Int($0.y)))" } ?? "nil"
+            AppLogger.shared.log(
+                "magnifier center on scroll: before=\(beforeText), after=\(afterText), moved=\(beforeText != afterText)"
+            )
+            lastMagnifierCenterLogTimestamp = now
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        dirtyRect.fill(using: .clear)
+        guard isActive else { return }
+
+        let now = CACurrentMediaTime()
+        let canRenderOverlays = !isMagnifierActive || showTrailEffectsWhileMagnifierActive
+        if canRenderOverlays {
+            drawMoveTrail(now: now)
+            drawDashBursts(now: now)
+        }
+        if canRenderOverlays && intensityPreset.effectsEnabled {
+            drawParticles(now: now)
+        }
+        if canRenderOverlays && isClickEffectsEnabled {
+            drawPulses(now: now)
+            drawPressedState()
+        }
+        if canRenderOverlays {
+            drawClickAccents(now: now)
+        }
+        drawMagnifier()
+    }
+
+    private func drawMoveTrail(now: CFTimeInterval) {
+        let samples = makeInterpolatedTrailSamples(now: now)
+        guard samples.count > 1 else { return }
+
+        switch trailStyle {
+        case .ribbon:
+            drawRibbonLikeTrail(samples: samples, now: now, style: .ribbon)
+        case .neon:
+            drawRibbonLikeTrail(samples: samples, now: now, style: .neon)
+        case .rainbow:
+            drawRibbonLikeTrail(samples: samples, now: now, style: .rainbow)
+        case .lightning:
+            drawLightningTrail(samples: samples, now: now)
+        }
+    }
+
+    private func drawRibbonLikeTrail(samples: [TrailSample], now: CFTimeInterval, style: TrailRenderStyle) {
+        guard samples.count > 3 else { return }
+
+        let total = max(1, samples.count - 1)
+        for index in 1..<(samples.count - 1) {
+            let previous = samples[index - 1]
+            let current = samples[index]
+            let next = samples[index + 1]
+
+            let start = NSPoint(
+                x: (previous.point.x + current.point.x) * 0.5,
+                y: (previous.point.y + current.point.y) * 0.5
+            )
+            let end = NSPoint(
+                x: (current.point.x + next.point.x) * 0.5,
+                y: (current.point.y + next.point.y) * 0.5
+            )
+
+            let baseAlpha = min(previous.alpha, min(current.alpha, next.alpha))
+            if baseAlpha <= 0.001 { continue }
+
+            let progress = CGFloat(index) / CGFloat(total)
+            let width: CGFloat = switch style {
+            case .ribbon:
+                max(0.42, trailLineWidth * (0.14 + 1.04 * pow(progress, 0.82)))
+            case .neon:
+                max(0.46, trailLineWidth * (0.18 + 1.16 * pow(progress, 0.82)))
+            case .rainbow:
+                max(0.44, trailLineWidth * (0.16 + 1.1 * pow(progress, 0.82)))
+            case .lightning:
+                max(0.4, trailLineWidth * (0.12 + 1.0 * pow(progress, 0.8)))
+            }
+            let segmentAlpha = baseAlpha * (0.06 + 0.94 * progress)
+
+            let curve = NSBezierPath()
+            curve.move(to: start)
+            curve.curve(to: end, controlPoint1: current.point, controlPoint2: current.point)
+            curve.lineCapStyle = .butt
+            curve.lineJoinStyle = .round
+
+            let glow = curve.copy() as! NSBezierPath
+            glow.lineWidth = width * (style == .neon ? 2.05 : 1.7)
+            glow.lineCapStyle = .butt
+            glow.lineJoinStyle = .round
+            let glowColor: NSColor = switch style {
+            case .ribbon:
+                trailColor
+            case .neon:
+                neonSecondaryColor
+            case .rainbow:
+                rainbowColor(for: current.index, now: now)
+            case .lightning:
+                trailColor
+            }
+            glowColor.withAlphaComponent((style == .neon ? 0.16 : 0.08) * segmentAlpha).setStroke()
+            glow.stroke()
+
+            curve.lineWidth = width
+            let rainbowBaseColor = style == .rainbow ? rainbowColor(for: current.index, now: now) : nil
+            let coreColor: NSColor = switch style {
+            case .ribbon:
+                trailColor.blended(withFraction: 0.1 + 0.22 * progress, of: .white) ?? trailColor
+            case .neon:
+                neonPrimaryColor.blended(withFraction: 0.08 + 0.2 * progress, of: .white) ?? neonPrimaryColor
+            case .rainbow:
+                (rainbowBaseColor?.blended(withFraction: 0.08, of: .white)) ?? (rainbowBaseColor ?? trailColor)
+            case .lightning:
+                trailColor
+            }
+            let coreAlpha: CGFloat = switch style {
+            case .ribbon:
+                0.72 * segmentAlpha
+            case .neon:
+                0.9 * segmentAlpha
+            case .rainbow:
+                0.82 * segmentAlpha
+            case .lightning:
+                0.78 * segmentAlpha
+            }
+            coreColor.withAlphaComponent(coreAlpha).setStroke()
+            curve.stroke()
+
+            if style == .neon {
+                let highlight = curve.copy() as! NSBezierPath
+                highlight.lineWidth = max(0.22, width * 0.36)
+                let highlightColor = (neonPrimaryColor.blended(withFraction: 0.35, of: .white) ?? neonPrimaryColor)
+                highlightColor.withAlphaComponent(0.32 * segmentAlpha).setStroke()
+                highlight.stroke()
+            }
+        }
+    }
+
+    private func drawLightningTrail(samples: [TrailSample], now: CFTimeInterval) {
+        guard samples.count > 1 else { return }
+        for index in 1..<samples.count {
+            let first = samples[index - 1]
+            let second = samples[index]
+            let alpha = min(first.alpha, second.alpha)
+            if alpha <= 0.001 { continue }
+
+            let distance = hypot(second.point.x - first.point.x, second.point.y - first.point.y)
+            guard distance >= 0.2 else { continue }
+
+            let progress = CGFloat(index) / CGFloat(max(1, samples.count - 1))
+            let lineWidth = max(0.6, trailLineWidth * (0.22 + 0.88 * pow(progress, 0.8)) * 0.92)
+
+            let lightningPath = makeLightningPath(from: first.point, to: second.point)
+            lightningPath.lineWidth = lineWidth
+            lightningPath.lineCapStyle = .butt
+            lightningPath.lineJoinStyle = .round
+            (trailColor.blended(withFraction: 0.45, of: .white) ?? trailColor).withAlphaComponent(0.95 * alpha).setStroke()
+            lightningPath.stroke()
+
+            if second.index % 10 == 0 {
+                let branch = makeLightningBranch(from: second.point)
+                branch.lineWidth = max(0.6, lineWidth * 0.75)
+                trailColor.withAlphaComponent(0.45 * alpha).setStroke()
+                branch.stroke()
+            }
+        }
+    }
+
+    private func drawDashBursts(now: CFTimeInterval) {
+        guard !dashBursts.isEmpty else { return }
+
+        for burst in dashBursts {
+            let age = now - burst.timestamp
+            if age < 0 || age > burst.lifetime { continue }
+            let progress = CGFloat(age / burst.lifetime)
+            let alpha = max(0, 1 - progress)
+
+            let glowPath = makeThunderDashPath(
+                from: burst.start,
+                to: burst.end,
+                jitter: thunderDashJitterAmplitude * (1 - progress)
+            )
+            glowPath.lineWidth = burst.lineWidth * 2.1
+            glowPath.lineCapStyle = .round
+            glowPath.lineJoinStyle = .round
+            burst.coreColor.withAlphaComponent(0.22 * alpha * intensityPreset.glowBoost).setStroke()
+            glowPath.stroke()
+
+            let corePath = makeThunderDashPath(
+                from: burst.start,
+                to: burst.end,
+                jitter: thunderDashJitterAmplitude * 0.48 * (1 - progress)
+            )
+            corePath.lineWidth = burst.lineWidth
+            corePath.lineCapStyle = .round
+            corePath.lineJoinStyle = .round
+            burst.coreColor.withAlphaComponent(0.94 * alpha).setStroke()
+            corePath.stroke()
+
+            let dx = burst.end.x - burst.start.x
+            let dy = burst.end.y - burst.start.y
+            let baseAngle = atan2(dy, dx)
+            for index in 0..<burst.branchCount {
+                let branchProgress = CGFloat(index + 1) / CGFloat(burst.branchCount + 1)
+                let anchor = NSPoint(
+                    x: burst.start.x + dx * branchProgress,
+                    y: burst.start.y + dy * branchProgress
+                )
+                let sway = sin(CGFloat(age * 42) + CGFloat(index) * 0.9) * 0.28
+                let branchAngle = baseAngle + (index.isMultiple(of: 2) ? .pi / 2 : -.pi / 2) + sway
+                let branchLength = max(8, 18 * (1 - progress))
+                let branch = NSBezierPath()
+                branch.move(to: anchor)
+                branch.line(to: NSPoint(
+                    x: anchor.x + cos(branchAngle) * branchLength,
+                    y: anchor.y + sin(branchAngle) * branchLength
+                ))
+                branch.lineWidth = max(0.9, burst.lineWidth * 0.42)
+                burst.branchColor.withAlphaComponent(0.72 * alpha).setStroke()
+                branch.stroke()
+            }
+        }
+    }
+
+    private func makeThunderDashPath(from start: NSPoint, to end: NSPoint, jitter: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: start)
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = max(0.01, hypot(dx, dy))
+        let normalX = -dy / distance
+        let normalY = dx / distance
+        let segments = 6
+        for segment in 1...segments {
+            let t = CGFloat(segment) / CGFloat(segments)
+            let jitterDistance = CGFloat.random(in: -jitter...jitter)
+            let x = start.x + dx * t + normalX * jitterDistance
+            let y = start.y + dy * t + normalY * jitterDistance
+            path.line(to: NSPoint(x: x, y: y))
+        }
+        return path
+    }
+
+    private func thunderDashVelocityThreshold(for preset: EffectIntensityPreset) -> CGFloat {
+        switch preset {
+        case .off:
+            return .greatestFiniteMagnitude
+        case .low:
+            return thunderDashVelocityThreshold * 1.2
+        case .normal:
+            return thunderDashVelocityThreshold
+        case .high:
+            return thunderDashVelocityThreshold * 0.9
+        }
+    }
+
+    private func emitThunderDashIfNeeded(from start: NSPoint, to end: NSPoint, velocity: CGFloat, timestamp: CFTimeInterval) {
+        guard trailStyle == .lightning else { return }
+        guard trailEffectStyle == .electric else { return }
+        guard intensityPreset.effectsEnabled else { return }
+        guard velocity >= thunderDashVelocityThreshold(for: intensityPreset) else { return }
+        guard timestamp - lastDashBurstTimestamp >= thunderDashCooldown else { return }
+
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = hypot(dx, dy)
+        guard distance > 0.1 else { return }
+        let directionX = dx / distance
+        let directionY = dy / distance
+
+        let burstLength = min(220, max(110, velocity * 0.06))
+        let burstStart = NSPoint(x: end.x - directionX * 18, y: end.y - directionY * 18)
+        let burstEnd = NSPoint(x: end.x + directionX * burstLength, y: end.y + directionY * burstLength)
+        let coreColor = (trailColor.blended(withFraction: 0.52, of: colorFromHexRGB(0xFFFDF5)) ?? trailColor)
+        let branchColor = (trailEffectColor.blended(withFraction: 0.35, of: colorFromHexRGB(0xFFB84D)) ?? trailEffectColor)
+        let lifetime = thunderDashBurstDuration + thunderDashAfterglowDuration
+        let width = max(2.1, trailLineWidth * 1.55)
+        let branchCount = Int.random(in: 2...4)
+
+        dashBursts.append(
+            DashBurst(
+                start: burstStart,
+                end: burstEnd,
+                coreColor: coreColor,
+                branchColor: branchColor,
+                lineWidth: width,
+                branchCount: branchCount,
+                lifetime: lifetime,
+                timestamp: timestamp
+            )
+        )
+        lastDashBurstTimestamp = timestamp
+        emitThunderDashParticles(start: burstStart, end: burstEnd, timestamp: timestamp, coreColor: coreColor, branchColor: branchColor)
+        addPulse(
+            at: end,
+            color: coreColor,
+            filled: false,
+            kind: .circle,
+            startRadius: max(9, clickEffectRadius * 0.48),
+            endRadius: max(18, clickEffectRadius * 1.28),
+            lineWidth: max(1.8, trailLineWidth * 0.72),
+            lifetime: 0.2,
+            timestamp: timestamp
+        )
+        clickAccents.append(
+            ClickAccent(
+                point: end,
+                color: coreColor,
+                radius: clickEffectRadius * 0.95,
+                kind: .cross,
+                lifetime: 0.18,
+                timestamp: timestamp
+            )
+        )
+        AppLogger.shared.log("thunder dash burst emitted: velocity=\(Int(velocity)) px/s")
+    }
+
+    private func emitThunderDashParticles(
+        start: NSPoint,
+        end: NSPoint,
+        timestamp: CFTimeInterval,
+        coreColor: NSColor,
+        branchColor: NSColor
+    ) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = max(0.001, hypot(dx, dy))
+        let directionX = dx / distance
+        let directionY = dy / distance
+        let burstCount = max(16, min(44, Int(24 * intensityPreset.particleSpawnMultiplier)))
+        for index in 0..<burstCount {
+            let interpolation = CGFloat(index) / CGFloat(max(1, burstCount - 1))
+            let jitter = CGFloat.random(in: -6...6)
+            let origin = NSPoint(
+                x: start.x + dx * interpolation + (-directionY) * jitter,
+                y: start.y + dy * interpolation + directionX * jitter
+            )
+            let spread = CGFloat.random(in: -0.75...0.75)
+            let rotatedX = directionX * cos(spread) - directionY * sin(spread)
+            let rotatedY = directionX * sin(spread) + directionY * cos(spread)
+            let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound * 1.3 ... intensityPreset.particleSpeedRange.upperBound * 2.4)
+            let colorPick = CGFloat.random(in: 0...1)
+            let color: NSColor
+            if colorPick < 0.55 {
+                color = coreColor
+            } else if colorPick < 0.82 {
+                color = branchColor
+            } else {
+                color = colorFromHexRGB(0xFFFDF5)
+            }
+            particles.append(
+                Particle(
+                    point: origin,
+                    velocity: CGVector(dx: rotatedX * speed, dy: rotatedY * speed),
+                    size: CGFloat.random(in: 1.1...3.0),
+                    color: color,
+                    lifetime: CFTimeInterval(CGFloat.random(in: 0.08...0.2)),
+                    timestamp: timestamp
+                )
+            )
+        }
+    }
+
+    private func makeInterpolatedTrailSamples(now: CFTimeInterval) -> [TrailSample] {
+        guard movePoints.count > 1 else { return [] }
+        let lifetime = max(0.01, trailLengthSeconds)
+        let maxSamples = 900
+        var samples: [TrailSample] = []
+        samples.reserveCapacity(min(maxSamples, movePoints.count * 3))
+        var sampleIndex = 0
+
+        for segment in 1..<movePoints.count {
+            let first = movePoints[segment - 1]
+            let second = movePoints[segment]
+            let dx = second.point.x - first.point.x
+            let dy = second.point.y - first.point.y
+            let distance = hypot(dx, dy)
+            let interpolationSteps = max(1, min(10, Int(ceil(distance / 5.0))))
+
+            for step in 0...interpolationSteps {
+                if segment > 1 && step == 0 { continue }
+
+                let fraction = CGFloat(step) / CGFloat(interpolationSteps)
+                let timestamp = first.timestamp + (second.timestamp - first.timestamp) * Double(fraction)
+                let age = now - timestamp
+                if age < 0 || age > lifetime { continue }
+
+                let point = NSPoint(
+                    x: first.point.x + dx * fraction,
+                    y: first.point.y + dy * fraction
+                )
+                let alpha = max(0, 1 - CGFloat(age / lifetime))
+                samples.append(TrailSample(point: point, alpha: alpha, index: sampleIndex))
+                sampleIndex += 1
+            }
+        }
+
+        if samples.count > maxSamples {
+            return Array(samples.suffix(maxSamples))
+        }
+        return samples
+    }
+
+    private func drawPulses(now: CFTimeInterval) {
+        for pulse in pulses {
+            let age = now - pulse.timestamp
+            if age < 0 || age > pulse.lifetime { continue }
+
+            let progress = CGFloat(age / pulse.lifetime)
+            let radius = pulse.startRadius + (pulse.endRadius - pulse.startRadius) * progress
+            let alpha = max(0, 1 - progress)
+            let rect = NSRect(
+                x: pulse.point.x - radius,
+                y: pulse.point.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+
+            switch pulse.kind {
+            case .circle:
+                let path = NSBezierPath(ovalIn: rect)
+                if pulse.filled {
+                    let gradient = NSGradient(
+                        colors: [
+                            pulse.color.withAlphaComponent(0.35 * alpha * intensityPreset.glowBoost),
+                            pulse.color.withAlphaComponent(0.06 * alpha),
+                            .clear,
+                        ]
+                    )
+                    gradient?.draw(in: path, relativeCenterPosition: .zero)
+                    pulse.color.withAlphaComponent(0.42 * alpha).setFill()
+                    NSBezierPath(
+                        ovalIn: NSRect(
+                            x: pulse.point.x - radius * 0.28,
+                            y: pulse.point.y - radius * 0.28,
+                            width: radius * 0.56,
+                            height: radius * 0.56
+                        )
+                    ).fill()
+                } else {
+                    path.lineWidth = pulse.lineWidth
+                    pulse.color.withAlphaComponent(0.95 * alpha).setStroke()
+                    path.stroke()
+                    let gradient = NSGradient(
+                        colors: [
+                            pulse.color.withAlphaComponent(0.28 * alpha * intensityPreset.glowBoost),
+                            pulse.color.withAlphaComponent(0.05 * alpha),
+                            .clear,
+                        ]
+                    )
+                    gradient?.draw(in: path, relativeCenterPosition: .zero)
+                }
+            case .cross:
+                let half = radius
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: pulse.point.x - half, y: pulse.point.y))
+                path.line(to: NSPoint(x: pulse.point.x + half, y: pulse.point.y))
+                path.move(to: NSPoint(x: pulse.point.x, y: pulse.point.y - half))
+                path.line(to: NSPoint(x: pulse.point.x, y: pulse.point.y + half))
+                path.lineCapStyle = .round
+                path.lineWidth = pulse.lineWidth
+                pulse.color.withAlphaComponent(0.95 * alpha).setStroke()
+                path.stroke()
+            }
+        }
+    }
+
+    private func drawParticles(now: CFTimeInterval) {
+        guard !particles.isEmpty else { return }
+
+        for particle in particles {
+            let age = now - particle.timestamp
+            if age < 0 || age > particle.lifetime { continue }
+
+            let progress = CGFloat(age / particle.lifetime)
+            let alpha = max(0, 1 - progress)
+
+            let x = particle.point.x + particle.velocity.dx * CGFloat(age)
+            let y = particle.point.y + particle.velocity.dy * CGFloat(age)
+            switch trailEffectStyle {
+            case .particles:
+                let radius = particle.size * (1 + progress * 0.45)
+                let rect = NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                let path = NSBezierPath(ovalIn: rect)
+                let gradient = NSGradient(
+                    colors: [
+                        particle.color.withAlphaComponent(0.48 * alpha),
+                        particle.color.withAlphaComponent(0.16 * alpha),
+                        .clear,
+                    ]
+                )
+                gradient?.draw(in: path, relativeCenterPosition: .zero)
+            case .ink:
+                let radius = particle.size * (1.2 + progress * 0.25)
+                let rect = NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                let blob = NSBezierPath(ovalIn: rect)
+                particle.color.withAlphaComponent(0.2 * alpha).setFill()
+                blob.fill()
+            case .electric:
+                let endX = x + CGFloat.random(in: -3...3)
+                let endY = y + CGFloat.random(in: -3...3)
+                let spark = NSBezierPath()
+                spark.move(to: NSPoint(x: x, y: y))
+                spark.line(to: NSPoint(x: endX, y: endY))
+                spark.lineWidth = max(0.8, particle.size * 0.6)
+                spark.lineCapStyle = .round
+                (particle.color.blended(withFraction: 0.45, of: .white) ?? particle.color)
+                    .withAlphaComponent(0.9 * alpha)
+                    .setStroke()
+                spark.stroke()
+            }
+        }
+    }
+
+    private func drawPressedState() {
+        guard let cursorPoint else { return }
+        guard pressedButton != .none else { return }
+        let style = effectStyle(for: pressedButton)
+        guard style.isEnabled else { return }
+        let stateColor = style.color
+
+        let radius: CGFloat = clickEffectRadius * 0.45
+        let rect = NSRect(
+            x: cursorPoint.x - radius,
+            y: cursorPoint.y - radius,
+            width: radius * 2,
+            height: radius * 2
+        )
+        let path = NSBezierPath(ovalIn: rect)
+        stateColor.withAlphaComponent(0.22).setFill()
+        path.fill()
+    }
+
+    private func drawClickAccents(now: CFTimeInterval) {
+        for accent in clickAccents {
+            let age = now - accent.timestamp
+            if age < 0 || age > accent.lifetime { continue }
+            let progress = CGFloat(age / accent.lifetime)
+            let alpha = max(0, 1 - progress)
+            let radius = accent.radius * (0.7 + progress * 0.7)
+            switch accent.kind {
+            case .cross:
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: accent.point.x - radius, y: accent.point.y))
+                path.line(to: NSPoint(x: accent.point.x + radius, y: accent.point.y))
+                path.move(to: NSPoint(x: accent.point.x, y: accent.point.y - radius))
+                path.line(to: NSPoint(x: accent.point.x, y: accent.point.y + radius))
+                path.lineWidth = max(1.2, trailLineWidth)
+                path.lineCapStyle = .round
+                accent.color.withAlphaComponent(0.9 * alpha).setStroke()
+                path.stroke()
+            }
+        }
+    }
+
+    private func drawMagnifier() {
+        guard isMagnifierActive, let cursorPoint else { return }
+        let radius = max(20, magnifierRadius)
+        let diameter = radius * 2
+        let zoom = max(1.0, magnifierZoom)
+        let sourceSize = diameter / zoom
+        let now = CACurrentMediaTime()
+
+        if now - lastMagnifierCaptureTimestamp >= magnifierCaptureInterval || cachedMagnifierImage == nil {
+            guard let quartzPoint = CGEvent(source: nil)?.location else { return }
+            let captureRect = CGRect(
+                x: quartzPoint.x - sourceSize / 2,
+                y: quartzPoint.y - sourceSize / 2,
+                width: sourceSize,
+                height: sourceSize
+            )
+            cachedMagnifierImage = {
+                if let currentWindowID = window.map({ CGWindowID($0.windowNumber) }) {
+                    return CGWindowListCreateImage(
+                        captureRect,
+                        .optionOnScreenBelowWindow,
+                        currentWindowID,
+                        [.bestResolution, .boundsIgnoreFraming]
+                    )
+                }
+                return nil
+            }() ?? CGWindowListCreateImage(
+                captureRect,
+                .optionOnScreenOnly,
+                kCGNullWindowID,
+                [.bestResolution, .boundsIgnoreFraming]
+            )
+            lastMagnifierCaptureTimestamp = now
+        }
+
+        guard let cgImage = cachedMagnifierImage else { return }
+
+        let circleRect = NSRect(
+            x: cursorPoint.x - radius,
+            y: cursorPoint.y - radius,
+            width: diameter,
+            height: diameter
+        )
+
+        NSGraphicsContext.saveGraphicsState()
+        let clipPath = NSBezierPath(ovalIn: circleRect)
+        clipPath.addClip()
+
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        image.draw(
+            in: circleRect,
+            from: NSRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height),
+            operation: .sourceOver,
+            fraction: 1
+        )
+
+        NSColor.black.withAlphaComponent(0.08).setFill()
+        clipPath.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let borderPath = NSBezierPath(ovalIn: circleRect)
+        borderPath.lineWidth = max(0.5, magnifierBorderWidth)
+        magnifierBorderColor.withAlphaComponent(0.96).setStroke()
+        borderPath.stroke()
+
+        let outerInset = max(1.5, magnifierBorderWidth * 0.8)
+        let outerPath = NSBezierPath(ovalIn: circleRect.insetBy(dx: -outerInset, dy: -outerInset))
+        outerPath.lineWidth = max(1, magnifierBorderWidth * 0.66)
+        NSColor.black.withAlphaComponent(magnifierShadowOpacity).setStroke()
+        outerPath.stroke()
+
+        let innerPath = NSBezierPath(ovalIn: circleRect.insetBy(dx: max(0.8, magnifierBorderWidth * 0.55), dy: max(0.8, magnifierBorderWidth * 0.55)))
+        innerPath.lineWidth = max(0.8, magnifierBorderWidth * 0.35)
+        (magnifierBorderColor.blended(withFraction: 0.25, of: .white) ?? magnifierBorderColor)
+            .withAlphaComponent(0.75)
+            .setStroke()
+        innerPath.stroke()
+    }
+
+    private func addPulse(
+        at point: NSPoint,
+        color: NSColor,
+        filled: Bool,
+        kind: Pulse.Kind = .circle,
+        startRadius: CGFloat,
+        endRadius: CGFloat,
+        lineWidth: CGFloat,
+        lifetime: CFTimeInterval,
+        timestamp: CFTimeInterval
+    ) {
+        pulses.append(
+            Pulse(
+                point: point,
+                color: color,
+                startRadius: startRadius,
+                endRadius: endRadius,
+                lineWidth: lineWidth,
+                filled: filled,
+                kind: kind,
+                lifetime: lifetime,
+                timestamp: timestamp
+            )
+        )
+    }
+
+    private func handleButtonDown(_ button: MouseButtonKind, point: NSPoint, timestamp: CFTimeInterval) {
+        guard isClickEffectsEnabled else {
+            pressedButton = .none
+            AppLogger.shared.log("click effect ignored: global click effects disabled (\(button.rawValue) down)")
+            return
+        }
+        let style = clickEffects[button] ?? ClickEffectStyle(isEnabled: true, color: .systemBlue)
+        guard style.isEnabled else {
+            pressedButton = .none
+            AppLogger.shared.log("click effect ignored: \(button.rawValue) style disabled")
+            return
+        }
+        pressedButton = pressedButton(from: button)
+        switch clickVisualStyle {
+        case .solidPulse:
+            addPulse(
+                at: point,
+                color: style.color,
+                filled: true,
+                kind: .circle,
+                startRadius: max(2, clickEffectRadius * 0.34),
+                endRadius: max(6, clickEffectRadius * 0.9),
+                lineWidth: 2.0 + trailLineWidth * 0.15,
+                lifetime: 0.28,
+                timestamp: timestamp
+            )
+        case .crossFlare:
+            addPulse(
+                at: point,
+                color: style.color,
+                filled: false,
+                kind: .cross,
+                startRadius: max(4, clickEffectRadius * 0.4),
+                endRadius: max(9, clickEffectRadius * 1.05),
+                lineWidth: 2.1,
+                lifetime: 0.26,
+                timestamp: timestamp
+            )
+            clickAccents.append(
+                ClickAccent(point: point, color: style.color, radius: clickEffectRadius * 0.9, kind: .cross, lifetime: 0.22, timestamp: timestamp)
+            )
+        }
+        emitClickSpark(at: point, color: style.color, timestamp: timestamp)
+        AppLogger.shared.log("click effect emitted: \(button.rawValue) down")
+    }
+
+    private func handleButtonUp(_ button: MouseButtonKind, point: NSPoint, timestamp: CFTimeInterval) {
+        guard isClickEffectsEnabled else {
+            pressedButton = .none
+            AppLogger.shared.log("click effect ignored: global click effects disabled (\(button.rawValue) up)")
+            return
+        }
+        if pressedButton == pressedButton(from: button) {
+            pressedButton = .none
+        }
+        let style = clickEffects[button] ?? ClickEffectStyle(isEnabled: true, color: .systemBlue)
+        guard style.isEnabled else {
+            AppLogger.shared.log("click effect ignored: \(button.rawValue) style disabled on up")
+            return
+        }
+        let brightColor = style.color.blended(withFraction: 0.2, of: .white) ?? style.color
+        switch clickVisualStyle {
+        case .solidPulse:
+            addPulse(
+                at: point,
+                color: brightColor,
+                filled: false,
+                kind: .circle,
+                startRadius: max(3, clickEffectRadius * 0.4),
+                endRadius: max(8, clickEffectRadius * 1.25),
+                lineWidth: 2.2 + trailLineWidth * 0.2,
+                lifetime: 0.38,
+                timestamp: timestamp
+            )
+        case .crossFlare:
+            addPulse(
+                at: point,
+                color: brightColor,
+                filled: false,
+                kind: .cross,
+                startRadius: max(4, clickEffectRadius * 0.42),
+                endRadius: max(9, clickEffectRadius * 1.1),
+                lineWidth: 2.0,
+                lifetime: 0.3,
+                timestamp: timestamp
+            )
+        }
+        emitClickSpark(at: point, color: brightColor, timestamp: timestamp)
+        AppLogger.shared.log("click effect emitted: \(button.rawValue) up")
+    }
+
+    private func pressedButton(from button: MouseButtonKind) -> PressedButton {
+        switch button {
+        case .left:
+            return .left
+        case .right:
+            return .right
+        case .middle:
+            return .middle
+        }
+    }
+
+    private func effectStyle(for button: PressedButton) -> ClickEffectStyle {
+        guard isClickEffectsEnabled else {
+            return ClickEffectStyle(isEnabled: false, color: .clear)
+        }
+        switch button {
+        case .left:
+            return clickEffects[.left] ?? ClickEffectStyle(isEnabled: true, color: .systemRed)
+        case .right:
+            return clickEffects[.right] ?? ClickEffectStyle(isEnabled: true, color: .systemOrange)
+        case .middle:
+            return clickEffects[.middle] ?? ClickEffectStyle(isEnabled: true, color: .systemPurple)
+        case .none:
+            return ClickEffectStyle(isEnabled: false, color: .clear)
+        }
+    }
+
+    private func rainbowColor(for index: Int, now: CFTimeInterval) -> NSColor {
+        let colors = rainbowTrailColors.isEmpty ? AppSettings.default.rainbowTrailColors : rainbowTrailColors
+        if colors.count == 1 { return colors[0] }
+        let progress = CGFloat((Double(index) * 0.22 + now * 1.8).truncatingRemainder(dividingBy: Double(colors.count)))
+        let base = Int(progress) % colors.count
+        let next = (base + 1) % colors.count
+        let fraction = progress - CGFloat(base)
+        return colors[base].blended(withFraction: fraction, of: colors[next]) ?? colors[base]
+    }
+
+    private func makeLightningPath(from start: NSPoint, to end: NSPoint) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: start)
+        let segments = 4
+        for segment in 1...segments {
+            let t = CGFloat(segment) / CGFloat(segments)
+            let x = start.x + (end.x - start.x) * t + CGFloat.random(in: -2.6...2.6)
+            let y = start.y + (end.y - start.y) * t + CGFloat.random(in: -2.6...2.6)
+            path.line(to: NSPoint(x: x, y: y))
+        }
+        return path
+    }
+
+    private func makeLightningBranch(from origin: NSPoint) -> NSBezierPath {
+        let branch = NSBezierPath()
+        branch.move(to: origin)
+        let angle = CGFloat.random(in: 0...(2 * .pi))
+        let length = CGFloat.random(in: 5...12)
+        branch.line(to: NSPoint(x: origin.x + cos(angle) * length, y: origin.y + sin(angle) * length))
+        return branch
+    }
+
+    private func trailBaseColor(index: Int, now: CFTimeInterval) -> NSColor {
+        switch trailStyle {
+        case .rainbow:
+            return rainbowColor(for: index, now: now)
+        case .neon:
+            return neonPrimaryColor.blended(withFraction: 0.5, of: neonSecondaryColor) ?? neonPrimaryColor
+        default:
+            return trailColor
+        }
+    }
+
+    private func emitTrailEffects(from start: NSPoint, to end: NSPoint, timestamp: CFTimeInterval) {
+        if trailStyle == .ribbon { return }
+        guard intensityPreset.effectsEnabled else { return }
+        let distance = hypot(end.x - start.x, end.y - start.y)
+        guard distance > 0.1 else { return }
+
+        let baseCount = max(1, Int(distance / 10))
+        let styleMultiplier: CGFloat = switch trailEffectStyle {
+        case .particles: 1.0
+        case .ink: 0.55
+        case .electric: 1.15
+        }
+        let spawnCount = min(
+            Int(CGFloat(baseCount) * intensityPreset.particleSpawnMultiplier * styleMultiplier) + 1,
+            max(4, Int(12 * intensityPreset.particleSpawnMultiplier))
+        )
+        let direction = CGVector(dx: end.x - start.x, dy: end.y - start.y)
+        let directionLength = max(0.001, hypot(direction.dx, direction.dy))
+        let normal = CGVector(dx: direction.dx / directionLength, dy: direction.dy / directionLength)
+
+        for index in 0..<spawnCount {
+            let interpolation = CGFloat(index) / CGFloat(max(1, spawnCount))
+            let jitter = CGFloat.random(in: -2...2)
+            let x = start.x + (end.x - start.x) * interpolation + jitter
+            let y = start.y + (end.y - start.y) * interpolation + CGFloat.random(in: -2...2)
+
+            let velocity: CGVector
+            let size: CGFloat
+            let lifetime: CFTimeInterval
+            let color: NSColor
+            let baseColor = trailBaseColor(index: index, now: timestamp)
+            let effectBaseColor = trailEffectColor.blended(withFraction: 0.2, of: baseColor) ?? trailEffectColor
+
+            switch trailEffectStyle {
+            case .particles:
+                let angle = CGFloat.random(in: 0...(2 * .pi))
+                let speed = CGFloat.random(in: intensityPreset.particleSpeedRange)
+                velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed)
+                size = CGFloat.random(in: intensityPreset.particleSizeRange)
+                lifetime = intensityPreset.particleLifetime * Double(CGFloat.random(in: 0.75...1.15))
+                color = effectBaseColor.blended(withFraction: 0.18, of: .white) ?? effectBaseColor
+            case .ink:
+                velocity = CGVector(dx: CGFloat.random(in: -12...12), dy: CGFloat.random(in: -12...12))
+                size = CGFloat.random(in: 2.5...6.5)
+                lifetime = 0.55
+                color = effectBaseColor.withAlphaComponent(0.55)
+            case .electric:
+                let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound ... intensityPreset.particleSpeedRange.upperBound * 1.8)
+                let angle = CGFloat.random(in: -0.9...0.9)
+                let rotatedX = normal.dx * cos(angle) - normal.dy * sin(angle)
+                let rotatedY = normal.dx * sin(angle) + normal.dy * cos(angle)
+                velocity = CGVector(dx: rotatedX * speed, dy: rotatedY * speed)
+                size = CGFloat.random(in: 1.0...2.4)
+                lifetime = 0.14
+                color = (effectBaseColor.blended(withFraction: 0.55, of: .white) ?? effectBaseColor)
+            }
+
+            particles.append(
+                Particle(
+                    point: NSPoint(x: x, y: y),
+                    velocity: velocity,
+                    size: size,
+                    color: color,
+                    lifetime: lifetime,
+                    timestamp: timestamp
+                )
+            )
+        }
+    }
+
+    private func emitClickSpark(at point: NSPoint, color: NSColor, timestamp: CFTimeInterval) {
+        guard intensityPreset.effectsEnabled else { return }
+        let count = max(6, Int(10 * intensityPreset.particleSpawnMultiplier))
+        for _ in 0..<count {
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound * 0.8 ... intensityPreset.particleSpeedRange.upperBound * 1.25)
+            let velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed)
+            let sizeBoost = max(0.8, clickEffectRadius / 24)
+            let size = CGFloat.random(in: intensityPreset.particleSizeRange.lowerBound ... intensityPreset.particleSizeRange.upperBound * 1.25) * sizeBoost
+            let lifetime = intensityPreset.particleLifetime * Double(CGFloat.random(in: 0.6...1.05))
+            particles.append(
+                Particle(
+                    point: point,
+                    velocity: velocity,
+                    size: size,
+                    color: color,
+                    lifetime: lifetime,
+                    timestamp: timestamp
+                )
+            )
+        }
+    }
+
+    private func startRefreshLoop() {
+        refreshTimer?.invalidate()
+        let timer = Timer(timeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.tick()
+            }
+        }
+        timer.tolerance = refreshInterval * 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
+    }
+
+    private func tick() {
+        guard isActive else { return }
+
+        let now = CACurrentMediaTime()
+        syncPressedButtonState()
+        trimExpiredPrefix(from: &movePoints) { now - $0.timestamp > trailLengthSeconds }
+        trimExpiredPrefix(from: &pulses) { now - $0.timestamp > $0.lifetime }
+        trimExpiredPrefix(from: &particles) { now - $0.timestamp > $0.lifetime }
+        trimExpiredPrefix(from: &clickAccents) { now - $0.timestamp > $0.lifetime }
+        trimExpiredPrefix(from: &dashBursts) { now - $0.timestamp > $0.lifetime }
+        if particles.count > intensityPreset.maxParticleCount {
+            particles.removeFirst(particles.count - intensityPreset.maxParticleCount)
+        }
+        let hasAnimatedContent =
+            !movePoints.isEmpty ||
+            !pulses.isEmpty ||
+            !particles.isEmpty ||
+            !clickAccents.isEmpty ||
+            !dashBursts.isEmpty ||
+            pressedButton != .none ||
+            isMagnifierActive
+        if hasAnimatedContent || hadAnimatedContentOnLastTick {
+            needsDisplay = true
+        }
+        hadAnimatedContentOnLastTick = hasAnimatedContent
+    }
+
+    private func trimExpiredPrefix<T>(from array: inout [T], isExpired: (T) -> Bool) {
+        guard !array.isEmpty else { return }
+        if let firstAliveIndex = array.firstIndex(where: { !isExpired($0) }) {
+            if firstAliveIndex > 0 {
+                array.removeFirst(firstAliveIndex)
+            }
+        } else {
+            array.removeAll(keepingCapacity: true)
+        }
+    }
+
+    private func syncPressedButtonState() {
+        switch pressedButton {
+        case .none:
+            return
+        case .left:
+            if !CGEventSource.buttonState(.combinedSessionState, button: .left) {
+                pressedButton = .none
+            }
+        case .right:
+            if !CGEventSource.buttonState(.combinedSessionState, button: .right) {
+                pressedButton = .none
+            }
+        case .middle:
+            if !CGEventSource.buttonState(.combinedSessionState, button: .center) {
+                pressedButton = .none
+            }
+        }
+    }
+}
+
+@MainActor
+final class OverlayWindowManager {
+    private struct Overlay {
+        let window: NSWindow
+        let view: TrailOverlayView
+    }
+
+    private var overlays: [Overlay] = []
+    private(set) var isTrackingEnabled = true
+    private var isMagnifierActive = false
+    private var settings: AppSettings = .default
+
+    init() {
+        rebuildOverlays()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenConfigurationChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    func setTrackingEnabled(_ enabled: Bool) {
+        isTrackingEnabled = enabled
+        for overlay in overlays {
+            overlay.view.setActive(enabled)
+        }
+    }
+
+    func setMagnifierActive(_ active: Bool) {
+        isMagnifierActive = settings.isMagnifierEnabled && active
+        for overlay in overlays {
+            overlay.view.setMagnifierActive(isMagnifierActive)
+        }
+    }
+
+    func clear() {
+        for overlay in overlays {
+            overlay.view.clear()
+        }
+    }
+
+    func setSettings(_ settings: AppSettings) {
+        self.settings = settings
+        if !settings.isMagnifierEnabled {
+            setMagnifierActive(false)
+        }
+        for overlay in overlays {
+            overlay.view.applySettings(settings)
+        }
+    }
+
+    func process(signal: MouseSignal) {
+        for overlay in overlays {
+            overlay.view.process(signal: signal, in: overlay.window.frame)
+        }
+    }
+
+    @objc
+    private func handleScreenConfigurationChange() {
+        rebuildOverlays()
+    }
+
+    private func rebuildOverlays() {
+        for overlay in overlays {
+            overlay.view.shutdown()
+            overlay.window.orderOut(nil)
+        }
+        overlays.removeAll()
+
+        for screen in NSScreen.screens {
+            let window = NSWindow(
+                contentRect: screen.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.ignoresMouseEvents = true
+            window.hasShadow = false
+            window.level = .screenSaver
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
+            let view = TrailOverlayView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            view.autoresizingMask = [.width, .height]
+            view.applySettings(settings)
+            view.setActive(isTrackingEnabled)
+            view.setMagnifierActive(isMagnifierActive)
+            window.contentView = view
+
+            window.orderFrontRegardless()
+
+            overlays.append(Overlay(window: window, view: view))
+        }
+    }
+}
+
+@MainActor
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    var onSettingsChanged: ((AppSettings) -> Void)?
+    var onRequestInputMonitoringPermission: (() -> Void)?
+    var isRecordingShortcut: Bool { isShortcutRecording }
+
+    private var settings: AppSettings
+    private var isSyncingControls = false
+
+    private let launchAtLoginSwitch = NSSwitch()
+    private let loggingSwitch = NSSwitch()
+    private let statusItemSwitch = NSSwitch()
+    private let trackingSwitch = NSSwitch()
+    private let clickEffectsSwitch = NSSwitch()
+    private let magnifierEnabledSwitch = NSSwitch()
+    private let magnifierShowEffectsSwitch = NSSwitch()
+
+    private let trailColorWell = NSColorWell()
+    private let trailEffectColorWell = NSColorWell()
+    private let neonPrimaryColorWell = NSColorWell()
+    private let neonSecondaryColorWell = NSColorWell()
+    private let magnifierBorderColorWell = NSColorWell()
+
+    private let trailWidthSlider = NSSlider()
+    private let trailWidthValueLabel = NSTextField(labelWithString: "")
+    private let trailLengthSlider = NSSlider()
+    private let trailLengthValueLabel = NSTextField(labelWithString: "")
+    private let clickRadiusSlider = NSSlider()
+    private let clickRadiusValueLabel = NSTextField(labelWithString: "")
+    private let magnifierRadiusSlider = NSSlider()
+    private let magnifierRadiusValueLabel = NSTextField(labelWithString: "")
+    private let magnifierZoomSlider = NSSlider()
+    private let magnifierZoomValueLabel = NSTextField(labelWithString: "")
+    private let magnifierBorderWidthSlider = NSSlider()
+    private let magnifierBorderWidthValueLabel = NSTextField(labelWithString: "")
+    private let magnifierShadowSlider = NSSlider()
+    private let magnifierShadowValueLabel = NSTextField(labelWithString: "")
+
+    private let trailStylePopup = NSPopUpButton()
+    private let trailEffectPopup = NSPopUpButton()
+    private let clickStylePopup = NSPopUpButton()
+    private let intensityPopup = NSPopUpButton()
+    private let magnifierShortcutButton = NSButton(title: "", target: nil, action: nil)
+    private let magnifierShortcutHint = NSTextField(labelWithString: "点击录制后按下按键/鼠标键，按住即可触发放大镜。")
+    private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
+
+    private let inputMonitoringStatusLabel = NSTextField(labelWithString: "")
+    private let accessibilityStatusLabel = NSTextField(labelWithString: "")
+    private let screenCaptureStatusLabel = NSTextField(labelWithString: "")
+    private let openInputMonitoringSettingsButton = NSButton(title: "前往输入监控设置", target: nil, action: nil)
+    private let openAccessibilitySettingsButton = NSButton(title: "前往辅助功能设置", target: nil, action: nil)
+    private let openScreenCaptureSettingsButton = NSButton(title: "前往屏幕录制设置", target: nil, action: nil)
+    private let openLogFolderButton = NSButton(title: "打开日志文件夹", target: nil, action: nil)
+    private let thunderPresetButton = NSButton(title: "应用「雷之呼吸·壹之型」预设", target: nil, action: nil)
+    private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
+    private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
+
+    private lazy var trailTypeRow = makePopupRow(title: "轨迹类型", popup: trailStylePopup)
+    private lazy var trailColorRow = makeColorRow(title: "轨迹颜色", control: trailColorWell)
+    private lazy var trailEffectColorRow = makeColorRow(title: "特效颜色", control: trailEffectColorWell)
+    private lazy var neonColorsRow = makeNeonColorsRow()
+    private lazy var rainbowColorsRow = makeRainbowColorsRow()
+    private lazy var trailEffectTypeRow = makePopupRow(title: "特效类型", popup: trailEffectPopup)
+    private lazy var trailWidthRow = makeSliderRow(title: "轨迹粗细", slider: trailWidthSlider, valueLabel: trailWidthValueLabel)
+    private lazy var trailLengthRow = makeSliderRow(title: "轨迹长度（毫秒）", slider: trailLengthSlider, valueLabel: trailLengthValueLabel)
+    private lazy var trailIntensityRow = makePopupRow(title: "特效强度", popup: intensityPopup)
+
+    private var clickToggleButtons: [MouseButtonKind: NSSwitch] = [:]
+    private var clickColorWells: [MouseButtonKind: NSColorWell] = [:]
+    private var toggleButtonToKind: [ObjectIdentifier: MouseButtonKind] = [:]
+    private var colorWellToKind: [ObjectIdentifier: MouseButtonKind] = [:]
+
+    private var shortcutCaptureMonitor: Any?
+    private var isShortcutRecording = false
+
+    init(initialSettings: AppSettings) {
+        settings = initialSettings
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 920),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "CursorTrailBar 设置"
+        window.center()
+        window.minSize = NSSize(width: 700, height: 780)
+        window.isReleasedWhenClosed = false
+
+        super.init(window: window)
+        window.delegate = self
+        configureUI()
+        syncControlsFromSettings()
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func present() {
+        guard let window else { return }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func updateSettings(_ newSettings: AppSettings) {
+        settings = newSettings
+        syncControlsFromSettings()
+    }
+
+    private func configureUI() {
+        guard let contentView = window?.contentView else { return }
+
+        let backgroundView = NSView()
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.backgroundColor = NSColor.white.cgColor
+        backgroundView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(backgroundView)
+        NSLayoutConstraint.activate([
+            backgroundView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            backgroundView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            backgroundView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            backgroundView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+
+        let rootStack = NSStackView()
+        rootStack.orientation = .vertical
+        rootStack.alignment = .leading
+        rootStack.distribution = .fill
+        rootStack.spacing = 16
+        rootStack.translatesAutoresizingMaskIntoConstraints = false
+        backgroundView.addSubview(rootStack)
+        NSLayoutConstraint.activate([
+            rootStack.leadingAnchor.constraint(equalTo: backgroundView.leadingAnchor, constant: 22),
+            rootStack.trailingAnchor.constraint(equalTo: backgroundView.trailingAnchor, constant: -22),
+            rootStack.topAnchor.constraint(equalTo: backgroundView.topAnchor, constant: 18),
+            rootStack.bottomAnchor.constraint(equalTo: backgroundView.bottomAnchor, constant: -18),
+        ])
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        rootStack.addArrangedSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: rootStack.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: rootStack.trailingAnchor),
+        ])
+
+        let documentView = NSView()
+        documentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = documentView
+
+        let contentStack = NSStackView()
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.distribution = .fill
+        contentStack.spacing = 14
+        contentStack.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 8, right: 0)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        documentView.addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+        ])
+
+        let regularSection = buildRegularSection()
+        let trailSection = buildTrailSection()
+        let clickSection = buildClickSection()
+        let magnifierSection = buildMagnifierSection()
+        let sections = [regularSection, trailSection, clickSection, magnifierSection]
+
+        sections.forEach { section in
+            section.translatesAutoresizingMaskIntoConstraints = false
+            section.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            section.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            contentStack.addArrangedSubview(section)
+            NSLayoutConstraint.activate([
+                section.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor),
+                section.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor),
+                section.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            ])
+        }
+        contentStack.addArrangedSubview(NSView())
+
+        applyCompactControlSizes()
+        configureTargets()
+        configureSliders()
+        refreshPermissionIndicators()
+    }
+
+    private func configureTargets() {
+        launchAtLoginSwitch.target = self
+        launchAtLoginSwitch.action = #selector(launchAtLoginSwitchChanged(_:))
+
+        loggingSwitch.target = self
+        loggingSwitch.action = #selector(loggingSwitchChanged(_:))
+
+        statusItemSwitch.target = self
+        statusItemSwitch.action = #selector(statusItemSwitchChanged(_:))
+
+        trackingSwitch.target = self
+        trackingSwitch.action = #selector(trackingSwitchChanged(_:))
+
+        clickEffectsSwitch.target = self
+        clickEffectsSwitch.action = #selector(clickEffectsSwitchChanged(_:))
+
+        magnifierEnabledSwitch.target = self
+        magnifierEnabledSwitch.action = #selector(magnifierEnabledSwitchChanged(_:))
+
+        magnifierShowEffectsSwitch.target = self
+        magnifierShowEffectsSwitch.action = #selector(magnifierShowEffectsSwitchChanged(_:))
+
+        trailColorWell.target = self
+        trailColorWell.action = #selector(trailColorChanged(_:))
+        trailEffectColorWell.target = self
+        trailEffectColorWell.action = #selector(trailEffectColorChanged(_:))
+        neonPrimaryColorWell.target = self
+        neonPrimaryColorWell.action = #selector(neonPrimaryColorChanged(_:))
+        neonSecondaryColorWell.target = self
+        neonSecondaryColorWell.action = #selector(neonSecondaryColorChanged(_:))
+        magnifierBorderColorWell.target = self
+        magnifierBorderColorWell.action = #selector(magnifierBorderColorChanged(_:))
+
+        trailStylePopup.target = self
+        trailStylePopup.action = #selector(trailStyleChanged(_:))
+        trailStylePopup.addItems(withTitles: TrailRenderStyle.allCases.map(\.title))
+
+        trailEffectPopup.target = self
+        trailEffectPopup.action = #selector(trailEffectStyleChanged(_:))
+        trailEffectPopup.addItems(withTitles: TrailEffectStyle.allCases.map(\.title))
+
+        clickStylePopup.target = self
+        clickStylePopup.action = #selector(clickVisualStyleChanged(_:))
+        clickStylePopup.addItems(withTitles: ClickVisualStyle.allCases.map(\.title))
+
+        intensityPopup.target = self
+        intensityPopup.action = #selector(intensityChanged(_:))
+        intensityPopup.addItems(withTitles: EffectIntensityPreset.allCases.map(\.title))
+
+        for (index, colorWell) in rainbowColorWells.enumerated() {
+            colorWell.tag = index
+            colorWell.target = self
+            colorWell.action = #selector(rainbowColorChanged(_:))
+        }
+
+        magnifierShortcutButton.target = self
+        magnifierShortcutButton.action = #selector(toggleShortcutRecording(_:))
+        magnifierShortcutButton.bezelStyle = .rounded
+
+        openInputMonitoringSettingsButton.target = self
+        openInputMonitoringSettingsButton.action = #selector(openInputMonitoringSettings(_:))
+        openAccessibilitySettingsButton.target = self
+        openAccessibilitySettingsButton.action = #selector(openAccessibilitySettings(_:))
+        openScreenCaptureSettingsButton.target = self
+        openScreenCaptureSettingsButton.action = #selector(openScreenCaptureSettings(_:))
+        openLogFolderButton.target = self
+        openLogFolderButton.action = #selector(openLogFolder(_:))
+        thunderPresetButton.target = self
+        thunderPresetButton.action = #selector(applyThunderPreset(_:))
+        thunderPresetButton.bezelStyle = .rounded
+
+    }
+
+    private func configureSliders() {
+        configureSlider(trailWidthSlider, min: 0.1, max: 300, value: 2.2, action: #selector(trailWidthSliderChanged(_:)))
+        configureSlider(trailLengthSlider, min: 10, max: 120_000, value: 650, action: #selector(trailLengthSliderChanged(_:)))
+        configureSlider(clickRadiusSlider, min: 1, max: 600, value: 24, action: #selector(clickRadiusSliderChanged(_:)))
+        configureSlider(magnifierRadiusSlider, min: 20, max: 1200, value: 120, action: #selector(magnifierRadiusSliderChanged(_:)))
+        configureSlider(magnifierZoomSlider, min: 1.0, max: 8.0, value: 2.0, action: #selector(magnifierZoomSliderChanged(_:)))
+        configureSlider(magnifierBorderWidthSlider, min: 0, max: 30, value: 3, action: #selector(magnifierBorderWidthSliderChanged(_:)))
+        configureSlider(magnifierShadowSlider, min: 0, max: 1, value: 0.28, action: #selector(magnifierShadowSliderChanged(_:)))
+    }
+
+    private func configureSlider(_ slider: NSSlider, min: Double, max: Double, value: Double, action: Selector) {
+        slider.minValue = min
+        slider.maxValue = max
+        slider.doubleValue = value
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = action
+    }
+
+    private func applyCompactControlSizes() {
+        let switches: [NSSwitch] =
+            [launchAtLoginSwitch, loggingSwitch, statusItemSwitch, trackingSwitch, clickEffectsSwitch, magnifierEnabledSwitch, magnifierShowEffectsSwitch]
+            + Array(clickToggleButtons.values)
+        for item in switches {
+            item.controlSize = .mini
+        }
+
+        let colorWells: [NSColorWell] =
+            [trailColorWell, trailEffectColorWell, neonPrimaryColorWell, neonSecondaryColorWell, magnifierBorderColorWell]
+            + Array(clickColorWells.values)
+            + rainbowColorWells
+        for colorWell in colorWells {
+            colorWell.controlSize = .small
+            colorWell.translatesAutoresizingMaskIntoConstraints = false
+            colorWell.widthAnchor.constraint(equalToConstant: 32).isActive = true
+            colorWell.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        }
+    }
+
+    private func buildRegularSection() -> NSView {
+        launchAtLoginStatusLabel.font = .systemFont(ofSize: 11)
+        launchAtLoginStatusLabel.textColor = .secondaryLabelColor
+        return makeSectionCard(
+            title: "常规",
+            subtitle: "开机与常驻相关设置",
+            rows: [
+                makeSwitchRow(title: "开机启动", subtitleLabel: launchAtLoginStatusLabel, toggle: launchAtLoginSwitch),
+                makeSwitchRow(title: "启用日志输出", subtitle: "写入日志文件以便排查问题", toggle: loggingSwitch),
+                makeButtonRow(title: "日志目录", button: openLogFolderButton),
+                makeSwitchRow(title: "菜单栏显示图标", subtitle: "关闭后仅保留主界面与全局功能", toggle: statusItemSwitch),
+            ]
+        )
+    }
+
+    private func buildTrailSection() -> NSView {
+        return makeSectionCard(
+            title: "轨迹",
+            subtitle: "鼠标轨迹与全局特效参数",
+            rows: [
+                makeSwitchRow(title: "开启轨迹", subtitle: "关闭后不再绘制轨迹", toggle: trackingSwitch),
+                makeButtonRow(title: "风格预设", button: thunderPresetButton),
+                trailTypeRow,
+                trailColorRow,
+                neonColorsRow,
+                rainbowColorsRow,
+                trailEffectTypeRow,
+                trailEffectColorRow,
+                trailWidthRow,
+                trailLengthRow,
+                trailIntensityRow,
+            ]
+        )
+    }
+
+    private func buildClickSection() -> NSView {
+        var rows: [NSView] = [
+            makeSwitchRow(title: "开启点击效果", subtitle: "关闭后不显示点击特效", toggle: clickEffectsSwitch),
+            makeSliderRow(title: "点击效果半径", slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel),
+        ]
+
+        for button in MouseButtonKind.allCases {
+            let toggle = NSSwitch()
+            toggle.target = self
+            toggle.action = #selector(clickToggleChanged(_:))
+            clickToggleButtons[button] = toggle
+            toggleButtonToKind[ObjectIdentifier(toggle)] = button
+
+            let colorWell = NSColorWell()
+            colorWell.target = self
+            colorWell.action = #selector(clickColorChanged(_:))
+            clickColorWells[button] = colorWell
+            colorWellToKind[ObjectIdentifier(colorWell)] = button
+
+            let title = NSTextField(labelWithString: "\(button.title) 点击效果")
+            title.font = .systemFont(ofSize: 13, weight: .medium)
+
+            let row = NSStackView(views: [title, NSView(), toggle, colorWell])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.distribution = .fill
+            row.spacing = 8
+            rows.append(row)
+        }
+
+        return makeSectionCard(
+            title: "点击",
+            subtitle: "点击特效开关、半径与各键位配色",
+            rows: [makePopupRow(title: "点击样式", popup: clickStylePopup)] + rows
+        )
+    }
+
+    private func buildMagnifierSection() -> NSView {
+        inputMonitoringStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        accessibilityStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        screenCaptureStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        magnifierShortcutHint.textColor = .secondaryLabelColor
+        magnifierShortcutHint.font = .systemFont(ofSize: 12)
+
+        return makeSectionCard(
+            title: "放大镜",
+            subtitle: "快捷键放大、视觉参数与权限入口",
+            rows: [
+                makeSwitchRow(title: "开启放大镜", subtitle: "关闭后快捷键不再触发放大镜", toggle: magnifierEnabledSwitch),
+                makeSwitchRow(title: "放大时显示轨迹与特效", subtitle: "关闭后放大时只显示放大内容", toggle: magnifierShowEffectsSwitch),
+                makeSliderRow(title: "放大镜半径", slider: magnifierRadiusSlider, valueLabel: magnifierRadiusValueLabel),
+                makeSliderRow(title: "放大倍率", slider: magnifierZoomSlider, valueLabel: magnifierZoomValueLabel),
+                makeSliderRow(title: "边框粗细", slider: magnifierBorderWidthSlider, valueLabel: magnifierBorderWidthValueLabel),
+                makeColorRow(title: "边框颜色", control: magnifierBorderColorWell),
+                makeSliderRow(title: "阴影强度", slider: magnifierShadowSlider, valueLabel: magnifierShadowValueLabel),
+                makeShortcutRecordRow(),
+                makeStatusActionRow(statusLabel: inputMonitoringStatusLabel, actionButton: openInputMonitoringSettingsButton),
+                makeStatusActionRow(statusLabel: accessibilityStatusLabel, actionButton: openAccessibilitySettingsButton),
+                makeStatusActionRow(statusLabel: screenCaptureStatusLabel, actionButton: openScreenCaptureSettingsButton),
+            ]
+        )
+    }
+
+    private func makeSectionCard(title: String, subtitle: String, rows: [NSView]) -> NSStackView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.distribution = .fill
+        section.spacing = 8
+
+        let container = NSStackView()
+        container.orientation = .vertical
+        container.alignment = .leading
+        container.distribution = .fill
+        container.spacing = 0
+        container.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 12
+        container.layer?.borderWidth = 0
+        container.layer?.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1.0).cgColor
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        let subtitleLabel = NSTextField(labelWithString: subtitle)
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = .secondaryLabelColor
+        let header = NSStackView(views: [titleLabel, subtitleLabel])
+        header.orientation = .vertical
+        header.alignment = .leading
+        header.spacing = 6
+
+        section.addArrangedSubview(header)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.widthAnchor.constraint(equalTo: section.widthAnchor).isActive = true
+
+        for (index, rowView) in rows.enumerated() {
+            let rowWrapper = NSStackView()
+            rowWrapper.orientation = .vertical
+            rowWrapper.alignment = .leading
+            rowWrapper.distribution = .fill
+            rowWrapper.spacing = 10
+            rowWrapper.addArrangedSubview(rowView)
+            rowView.translatesAutoresizingMaskIntoConstraints = false
+            rowView.leadingAnchor.constraint(equalTo: rowWrapper.leadingAnchor).isActive = true
+            rowView.trailingAnchor.constraint(equalTo: rowWrapper.trailingAnchor).isActive = true
+            if index < rows.count - 1 {
+                rowWrapper.addArrangedSubview(makeRowSeparator())
+            }
+            rowWrapperByRowIdentifier[ObjectIdentifier(rowView)] = rowWrapper
+            container.addArrangedSubview(rowWrapper)
+            constrainCardRow(rowWrapper, in: container)
+        }
+
+        section.addArrangedSubview(container)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.widthAnchor.constraint(equalTo: section.widthAnchor).isActive = true
+        return section
+    }
+
+    private func makeSwitchRow(title: String, subtitle: String, toggle: NSSwitch) -> NSView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        let subtitleLabel = NSTextField(labelWithString: subtitle)
+        subtitleLabel.font = .systemFont(ofSize: 11)
+        subtitleLabel.textColor = .secondaryLabelColor
+        let textStack = NSStackView(views: [titleLabel, subtitleLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textStack.spacing = 3
+        let row = NSStackView(views: [textStack, NSView(), toggle])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeSwitchRow(title: String, subtitleLabel: NSTextField, toggle: NSSwitch) -> NSView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        subtitleLabel.font = .systemFont(ofSize: 11)
+        subtitleLabel.textColor = .secondaryLabelColor
+        let textStack = NSStackView(views: [titleLabel, subtitleLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textStack.spacing = 3
+        let row = NSStackView(views: [textStack, NSView(), toggle])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeShortcutRecordRow() -> NSView {
+        let row = makeButtonRow(title: "放大镜快捷键", button: magnifierShortcutButton)
+        let stack = NSStackView(views: [row, magnifierShortcutHint])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        return stack
+    }
+
+    private func makeStatusActionRow(statusLabel: NSTextField, actionButton: NSButton) -> NSView {
+        let row = NSStackView(views: [statusLabel, NSView(), actionButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeRainbowColorsRow() -> NSView {
+        let label = NSTextField(labelWithString: "彩虹颜色")
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        let wellsStack = NSStackView(views: rainbowColorWells)
+        wellsStack.orientation = .horizontal
+        wellsStack.alignment = .centerY
+        wellsStack.spacing = 6
+        let row = NSStackView(views: [label, NSView(), wellsStack])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeNeonColorsRow() -> NSView {
+        let label = NSTextField(labelWithString: "霓虹颜色")
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        let first = labeledColorWell("主色", colorWell: neonPrimaryColorWell)
+        let second = labeledColorWell("辅色", colorWell: neonSecondaryColorWell)
+        let colors = NSStackView(views: [first, second])
+        colors.orientation = .horizontal
+        colors.alignment = .centerY
+        colors.spacing = 8
+        let row = NSStackView(views: [label, NSView(), colors])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func labeledColorWell(_ title: String, colorWell: NSColorWell) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [label, colorWell])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 4
+        return stack
+    }
+
+    private func makeColorRow(title: String, control: NSColorWell) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        let row = NSStackView(views: [label, NSView(), control])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makePopupRow(title: String, popup: NSPopUpButton) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        popup.setContentHuggingPriority(.required, for: .horizontal)
+        let row = NSStackView(views: [label, NSView(), popup])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeButtonRow(title: String, button: NSButton) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        let row = NSStackView(views: [label, NSView(), button])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeSliderRow(title: String, slider: NSSlider, valueLabel: NSTextField) -> NSView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+
+        valueLabel.alignment = .right
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        valueLabel.widthAnchor.constraint(equalToConstant: 92).isActive = true
+        valueLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = NSStackView(views: [titleLabel, NSView(), valueLabel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 6
+
+        let stack = NSStackView(views: [row, slider])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        return stack
+    }
+
+    private func constrainCardRow(_ row: NSView, in container: NSStackView) {
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: container.edgeInsets.left),
+            row.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -container.edgeInsets.right),
+        ])
+    }
+
+    private func setRowVisibility(_ row: NSView, isVisible: Bool) {
+        rowWrapperByRowIdentifier[ObjectIdentifier(row)]?.isHidden = !isVisible
+    }
+
+    private func makeRowSeparator() -> NSView {
+        let line = NSView()
+        line.wantsLayer = true
+        line.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.04).cgColor
+        line.translatesAutoresizingMaskIntoConstraints = false
+        line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return line
+    }
+
+    private func syncControlsFromSettings() {
+        isSyncingControls = true
+
+        launchAtLoginSwitch.state = settings.isLaunchAtLoginEnabled ? .on : .off
+        loggingSwitch.state = settings.isLoggingEnabled ? .on : .off
+        statusItemSwitch.state = settings.isStatusItemVisible ? .on : .off
+        trackingSwitch.state = settings.isTrackingEnabled ? .on : .off
+        clickEffectsSwitch.state = settings.isClickEffectsEnabled ? .on : .off
+        magnifierEnabledSwitch.state = settings.isMagnifierEnabled ? .on : .off
+        magnifierShowEffectsSwitch.state = settings.showTrailEffectsWhileMagnifierActive ? .on : .off
+
+        trailColorWell.color = settings.trailColor
+        trailEffectColorWell.color = settings.trailEffectColor
+        neonPrimaryColorWell.color = settings.neonPrimaryColor
+        neonSecondaryColorWell.color = settings.neonSecondaryColor
+        magnifierBorderColorWell.color = settings.magnifierBorderColor
+        for index in rainbowColorWells.indices {
+            let color = settings.rainbowTrailColors.indices.contains(index)
+                ? settings.rainbowTrailColors[index]
+                : settings.rainbowTrailColors.last ?? .systemBlue
+            rainbowColorWells[index].color = color
+        }
+
+        trailWidthSlider.doubleValue = settings.trailWidth
+        trailLengthSlider.doubleValue = settings.trailLengthMilliseconds
+        clickRadiusSlider.doubleValue = settings.clickEffectRadius
+        magnifierRadiusSlider.doubleValue = settings.magnifierRadius
+        magnifierZoomSlider.doubleValue = settings.magnifierZoom
+        magnifierBorderWidthSlider.doubleValue = settings.magnifierBorderWidth
+        magnifierShadowSlider.doubleValue = settings.magnifierShadowOpacity
+
+        updateSliderValueLabels()
+
+        if let index = EffectIntensityPreset.allCases.firstIndex(of: settings.intensityPreset) {
+            intensityPopup.selectItem(at: index)
+        }
+        if let index = TrailRenderStyle.allCases.firstIndex(of: settings.trailStyle) {
+            trailStylePopup.selectItem(at: index)
+        }
+        if let index = TrailEffectStyle.allCases.firstIndex(of: settings.trailEffectStyle) {
+            trailEffectPopup.selectItem(at: index)
+        }
+        if let index = ClickVisualStyle.allCases.firstIndex(of: settings.clickVisualStyle) {
+            clickStylePopup.selectItem(at: index)
+        }
+
+        magnifierShortcutButton.title = isShortcutRecording
+            ? "按下键盘/鼠标快捷键…(Esc取消)"
+            : settings.magnifierShortcut.displayText
+
+        for button in MouseButtonKind.allCases {
+            let style = settings.effectStyle(for: button)
+            clickToggleButtons[button]?.state = style.isEnabled ? .on : .off
+            clickColorWells[button]?.color = style.color
+            clickColorWells[button]?.isEnabled = settings.isClickEffectsEnabled && style.isEnabled
+        }
+
+        updateToggleAvailability()
+        refreshLaunchAtLoginHint()
+        isSyncingControls = false
+        refreshPermissionIndicators()
+    }
+
+    private func refreshLaunchAtLoginHint() {
+        guard #available(macOS 13.0, *) else {
+            launchAtLoginStatusLabel.stringValue = "当前系统版本不支持应用内开机启动控制。"
+            launchAtLoginStatusLabel.textColor = .systemRed
+            return
+        }
+        if settings.isLaunchAtLoginEnabled {
+            launchAtLoginStatusLabel.stringValue = "已请求开机启动；若未生效，请将 App 放到“应用程序”目录。"
+            launchAtLoginStatusLabel.textColor = .secondaryLabelColor
+        } else {
+            launchAtLoginStatusLabel.stringValue = "开机启动已关闭。"
+            launchAtLoginStatusLabel.textColor = .secondaryLabelColor
+        }
+    }
+
+    private func updateToggleAvailability() {
+        let clickEnabled = settings.isClickEffectsEnabled
+        clickRadiusSlider.isEnabled = clickEnabled
+        clickStylePopup.isEnabled = clickEnabled
+        for button in MouseButtonKind.allCases {
+            let buttonEnabled = settings.effectStyle(for: button).isEnabled
+            clickToggleButtons[button]?.isEnabled = clickEnabled
+            clickColorWells[button]?.isEnabled = clickEnabled && buttonEnabled
+        }
+
+        let rainbowEnabled = settings.trailStyle == .rainbow
+        rainbowColorWells.forEach { $0.isEnabled = rainbowEnabled }
+        setRowVisibility(trailColorRow, isVisible: settings.trailStyle != .rainbow && settings.trailStyle != .neon)
+        setRowVisibility(rainbowColorsRow, isVisible: settings.trailStyle == .rainbow)
+        setRowVisibility(neonColorsRow, isVisible: settings.trailStyle == .neon)
+
+        let magnifierEnabled = settings.isMagnifierEnabled
+        magnifierShowEffectsSwitch.isEnabled = magnifierEnabled
+        magnifierRadiusSlider.isEnabled = magnifierEnabled
+        magnifierZoomSlider.isEnabled = magnifierEnabled
+        magnifierBorderWidthSlider.isEnabled = magnifierEnabled
+        magnifierBorderColorWell.isEnabled = magnifierEnabled
+        magnifierShadowSlider.isEnabled = magnifierEnabled
+        magnifierShortcutButton.isEnabled = magnifierEnabled
+        magnifierShortcutHint.textColor = magnifierEnabled ? .secondaryLabelColor : .tertiaryLabelColor
+    }
+
+    private func updateSliderValueLabels() {
+        trailWidthValueLabel.stringValue = "\(rounded(Double(settings.trailWidth))) px"
+        trailLengthValueLabel.stringValue = "\(Int(settings.trailLengthMilliseconds)) ms"
+        clickRadiusValueLabel.stringValue = "\(Int(settings.clickEffectRadius)) px"
+        magnifierRadiusValueLabel.stringValue = "\(Int(settings.magnifierRadius)) px"
+        magnifierZoomValueLabel.stringValue = "\(rounded(Double(settings.magnifierZoom))) x"
+        magnifierBorderWidthValueLabel.stringValue = "\(rounded(Double(settings.magnifierBorderWidth))) px"
+        magnifierShadowValueLabel.stringValue = "\(rounded(Double(settings.magnifierShadowOpacity)))"
+    }
+
+    private func publishChanges() {
+        guard !isSyncingControls else { return }
+        onSettingsChanged?(settings)
+    }
+
+    @objc
+    private func launchAtLoginSwitchChanged(_ sender: NSSwitch) {
+        settings.isLaunchAtLoginEnabled = sender.state == .on
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func loggingSwitchChanged(_ sender: NSSwitch) {
+        settings.isLoggingEnabled = sender.state == .on
+        publishChanges()
+    }
+
+    @objc
+    private func statusItemSwitchChanged(_ sender: NSSwitch) {
+        settings.isStatusItemVisible = sender.state == .on
+        publishChanges()
+    }
+
+    @objc
+    private func trackingSwitchChanged(_ sender: NSSwitch) {
+        settings.isTrackingEnabled = sender.state == .on
+        publishChanges()
+    }
+
+    @objc
+    private func clickEffectsSwitchChanged(_ sender: NSSwitch) {
+        settings.isClickEffectsEnabled = sender.state == .on
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierEnabledSwitchChanged(_ sender: NSSwitch) {
+        settings.isMagnifierEnabled = sender.state == .on
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func trailColorChanged(_ sender: NSColorWell) {
+        settings.trailColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func trailEffectColorChanged(_ sender: NSColorWell) {
+        settings.trailEffectColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func neonPrimaryColorChanged(_ sender: NSColorWell) {
+        settings.neonPrimaryColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func neonSecondaryColorChanged(_ sender: NSColorWell) {
+        settings.neonSecondaryColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func trailStyleChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard TrailRenderStyle.allCases.indices.contains(index) else { return }
+        settings.trailStyle = TrailRenderStyle.allCases[index]
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func trailEffectStyleChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard TrailEffectStyle.allCases.indices.contains(index) else { return }
+        settings.trailEffectStyle = TrailEffectStyle.allCases[index]
+        publishChanges()
+    }
+
+    @objc
+    private func clickVisualStyleChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard ClickVisualStyle.allCases.indices.contains(index) else { return }
+        settings.clickVisualStyle = ClickVisualStyle.allCases[index]
+        publishChanges()
+    }
+
+    @objc
+    private func rainbowColorChanged(_ sender: NSColorWell) {
+        settings.rainbowTrailColors = rainbowColorWells.map(\.color)
+        publishChanges()
+    }
+
+    @objc
+    private func trailWidthSliderChanged(_ sender: NSSlider) {
+        settings.trailWidth = clampTrailWidth(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func trailLengthSliderChanged(_ sender: NSSlider) {
+        settings.trailLengthMilliseconds = clampTrailLengthMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func clickRadiusSliderChanged(_ sender: NSSlider) {
+        settings.clickEffectRadius = clampClickEffectRadius(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierRadiusSliderChanged(_ sender: NSSlider) {
+        settings.magnifierRadius = clampMagnifierRadius(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierZoomSliderChanged(_ sender: NSSlider) {
+        settings.magnifierZoom = clampMagnifierZoom(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierBorderWidthSliderChanged(_ sender: NSSlider) {
+        settings.magnifierBorderWidth = clampMagnifierBorderWidth(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierShadowSliderChanged(_ sender: NSSlider) {
+        settings.magnifierShadowOpacity = clampMagnifierShadowOpacity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierShowEffectsSwitchChanged(_ sender: NSSwitch) {
+        settings.showTrailEffectsWhileMagnifierActive = sender.state == .on
+        publishChanges()
+    }
+
+    @objc
+    private func intensityChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard EffectIntensityPreset.allCases.indices.contains(index) else { return }
+        settings.intensityPreset = EffectIntensityPreset.allCases[index]
+        publishChanges()
+    }
+
+    @objc
+    private func applyThunderPreset(_ sender: NSButton) {
+        settings.applyThunderFirstFormPreset()
+        syncControlsFromSettings()
+        publishChanges()
+        AppLogger.shared.log("thunder preset applied from settings")
+    }
+
+    @objc
+    private func clickToggleChanged(_ sender: NSSwitch) {
+        guard let button = toggleButtonToKind[ObjectIdentifier(sender)] else { return }
+        var style = settings.effectStyle(for: button)
+        style.isEnabled = sender.state == .on
+        settings.clickEffects[button] = style
+        clickColorWells[button]?.isEnabled = settings.isClickEffectsEnabled && style.isEnabled
+        publishChanges()
+    }
+
+    @objc
+    private func clickColorChanged(_ sender: NSColorWell) {
+        guard let button = colorWellToKind[ObjectIdentifier(sender)] else { return }
+        var style = settings.effectStyle(for: button)
+        style.color = sender.color
+        settings.clickEffects[button] = style
+        publishChanges()
+    }
+
+    @objc
+    private func magnifierBorderColorChanged(_ sender: NSColorWell) {
+        settings.magnifierBorderColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func toggleShortcutRecording(_ sender: NSButton) {
+        if isShortcutRecording {
+            stopShortcutRecording()
+        } else {
+            startShortcutRecording()
+        }
+    }
+
+    private func startShortcutRecording() {
+        guard !isShortcutRecording else { return }
+        isShortcutRecording = true
+        syncControlsFromSettings()
+
+        shortcutCaptureMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+
+            if event.type == .keyDown, event.keyCode == UInt16(kVK_Escape) {
+                self.stopShortcutRecording()
+                return nil
+            }
+
+            guard let shortcut = MagnifierShortcut.capture(from: event) else { return nil }
+            self.settings.magnifierShortcut = shortcut
+            self.publishChanges()
+            self.stopShortcutRecording()
+            return nil
+        }
+    }
+
+    private func stopShortcutRecording() {
+        if let shortcutCaptureMonitor {
+            NSEvent.removeMonitor(shortcutCaptureMonitor)
+            self.shortcutCaptureMonitor = nil
+        }
+        isShortcutRecording = false
+        syncControlsFromSettings()
+    }
+
+    private func refreshPermissionIndicators() {
+        let listenGranted = CGPreflightListenEventAccess()
+        inputMonitoringStatusLabel.stringValue = listenGranted
+            ? "输入监控权限：已授权 ✅"
+            : "输入监控权限：未授权 ❌（全局快捷键可能无效）"
+        inputMonitoringStatusLabel.textColor = listenGranted ? .systemGreen : .systemRed
+
+        let accessibilityTrusted = AXIsProcessTrusted()
+        accessibilityStatusLabel.stringValue = accessibilityTrusted
+            ? "辅助功能权限：已授权 ✅"
+            : "辅助功能权限：未授权 ❌（放大镜滚轮拦截会无效）"
+        accessibilityStatusLabel.textColor = accessibilityTrusted ? .systemGreen : .systemRed
+
+        let screenGranted = CGPreflightScreenCaptureAccess()
+        screenCaptureStatusLabel.stringValue = screenGranted
+            ? "屏幕录制权限：已授权 ✅"
+            : "屏幕录制权限：未授权 ❌（放大镜可能无法取屏）"
+        screenCaptureStatusLabel.textColor = screenGranted ? .systemGreen : .systemRed
+    }
+
+    @objc
+    private func openInputMonitoringSettings(_ sender: NSButton) {
+        let before = CGPreflightListenEventAccess()
+        if !before {
+            let requested = CGRequestListenEventAccess()
+            AppLogger.shared.log("input monitoring permission requested, result=\(requested)")
+        }
+        onRequestInputMonitoringPermission?()
+        refreshPermissionIndicators()
+        openSystemSettings(urlStrings: [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+            "x-apple.systempreferences:com.apple.preference.security",
+        ])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.refreshPermissionIndicators()
+        }
+    }
+
+
+    @objc
+    private func openAccessibilitySettings(_ sender: NSButton) {
+        if !AXIsProcessTrusted() {
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+            let trustedAfterPrompt = AXIsProcessTrustedWithOptions(options)
+            AppLogger.shared.log("accessibility permission requested from settings button, trustedAfterPrompt=\(trustedAfterPrompt)")
+        }
+        refreshPermissionIndicators()
+        openSystemSettings(urlStrings: [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security",
+        ])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.refreshPermissionIndicators()
+        }
+    }
+
+    @objc
+    private func openScreenCaptureSettings(_ sender: NSButton) {
+        let before = CGPreflightScreenCaptureAccess()
+        if !before {
+            let requested = CGRequestScreenCaptureAccess()
+            AppLogger.shared.log("screen capture permission requested, result=\(requested)")
+        }
+        refreshPermissionIndicators()
+        openSystemSettings(urlStrings: [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            "x-apple.systempreferences:com.apple.preference.security",
+        ])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.refreshPermissionIndicators()
+        }
+    }
+
+    @objc
+    private func openLogFolder(_ sender: NSButton) {
+        let url = URL(fileURLWithPath: AppLogger.shared.logPath()).deletingLastPathComponent()
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openSystemSettings(urlStrings: [String]) {
+        for item in urlStrings {
+            guard let url = URL(string: item) else { continue }
+            if NSWorkspace.shared.open(url) { break }
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopShortcutRecording()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        refreshPermissionIndicators()
+    }
+
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let overlayManager = OverlayWindowManager()
+    private let mouseMonitor = MouseMonitor()
+    private let hotKeyManager = HotKeyManager()
+    private let globalShortcutMonitor = GlobalShortcutMonitor()
+    private let globalScrollInterceptor = GlobalScrollInterceptor()
+    private let settingsStore = SettingsStore()
+    private let launchAtLoginManager = LaunchAtLoginManager()
+
+    private var statusItem: NSStatusItem?
+    private var toggleMenuItem: NSMenuItem?
+    private var settingsWindowController: SettingsWindowController?
+    private var settings: AppSettings = .default
+    private var isMagnifierShortcutHeld = false
+    private var isGlobalShortcutMonitorActive = false
+    private var lastAppliedLaunchAtLoginState: Bool?
+    private var lastLoggedScrollConsumeState: Bool?
+    private var hasPromptedAccessibilityForScrollInterception = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        settings = settingsStore.loadSettings()
+        AppLogger.shared.setEnabled(settings.isLoggingEnabled)
+        AppLogger.shared.log("application did finish launching")
+        let launchEnabled = launchAtLoginManager.isEnabled()
+        if launchEnabled != settings.isLaunchAtLoginEnabled {
+            settings.isLaunchAtLoginEnabled = launchEnabled
+            settingsStore.saveSettings(settings)
+            AppLogger.shared.log("launch at login state synchronized to \(launchEnabled)")
+        }
+        if settings.isStatusItemVisible {
+            setupStatusItem()
+        }
+
+        mouseMonitor.onEvent = { [weak self] signal in
+            self?.overlayManager.process(signal: signal)
+        }
+        mouseMonitor.onRawEvent = { [weak self] event in
+            self?.handleRawEvent(event)
+        }
+        mouseMonitor.start()
+
+        globalScrollInterceptor.onScroll = { [weak self] signal in
+            DispatchQueue.main.async { [weak self] in
+                self?.overlayManager.process(signal: signal)
+            }
+        }
+        AppLogger.shared.log("global scroll interceptor configured (lazy start)")
+
+        globalShortcutMonitor.onInput = { [weak self] input in
+            self?.handleShortcutInput(input)
+        }
+        isGlobalShortcutMonitorActive = globalShortcutMonitor.start()
+
+        hotKeyManager.onToggle = { [weak self] in
+            self?.toggleTracking()
+        }
+        _ = hotKeyManager.registerHotKey()
+
+        applySettings(persist: false, syncWindow: false)
+        DispatchQueue.main.async { [weak self] in
+            self?.openSettingsWindow()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        mouseMonitor.stop()
+        hotKeyManager.unregisterHotKey()
+        globalShortcutMonitor.stop()
+        globalScrollInterceptor.stop()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // 启动或激活时不再自动弹设置窗口；仅由用户显式打开。
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            openSettingsWindow()
+        }
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    private func setupStatusItem() {
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = item
+
+        if let button = item.button {
+            button.title = ""
+            button.image = makeStatusBarTemplateIcon()
+            button.imagePosition = .imageOnly
+            button.toolTip = "Cursor Trail"
+            button.setAccessibilityLabel("CursorTrailBar")
+        }
+
+        let menu = NSMenu()
+
+        let toggleItem = NSMenuItem(
+            title: settings.isTrackingEnabled ? "关闭轨迹显示" : "开启轨迹显示",
+            action: #selector(toggleTracking),
+            keyEquivalent: ""
+        )
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+        toggleMenuItem = toggleItem
+
+        let settingsItem = NSMenuItem(title: "打开设置…", action: #selector(openSettingsWindow), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        let clearItem = NSMenuItem(title: "清空当前轨迹", action: #selector(clearTrail), keyEquivalent: "")
+        clearItem.target = self
+        menu.addItem(clearItem)
+
+        let hotkeyHintItem = NSMenuItem(
+            title: "快捷键开关：\(hotKeyManager.displayLabel)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        hotkeyHintItem.isEnabled = false
+        menu.addItem(hotkeyHintItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        item.menu = menu
+    }
+
+    private func makeStatusBarTemplateIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let trail = NSBezierPath()
+            trail.move(to: NSPoint(x: 1.8, y: 6.2))
+            trail.curve(
+                to: NSPoint(x: 10.0, y: 8.2),
+                controlPoint1: NSPoint(x: 3.8, y: 4.2),
+                controlPoint2: NSPoint(x: 7.2, y: 7.5)
+            )
+            trail.lineWidth = 1.8
+            trail.lineCapStyle = .round
+            trail.lineJoinStyle = .round
+            NSColor.labelColor.setStroke()
+            trail.stroke()
+
+            let pointer = NSBezierPath()
+            pointer.move(to: NSPoint(x: 7.3, y: 2.7))
+            pointer.line(to: NSPoint(x: 14.8, y: 8.5))
+            pointer.line(to: NSPoint(x: 11.1, y: 9.2))
+            pointer.line(to: NSPoint(x: 12.8, y: 14.7))
+            pointer.line(to: NSPoint(x: 10.7, y: 15.5))
+            pointer.line(to: NSPoint(x: 9.0, y: 10.2))
+            pointer.line(to: NSPoint(x: 6.8, y: 11.8))
+            pointer.close()
+            NSColor.labelColor.setFill()
+            pointer.fill()
+
+            return true
+        }
+        image.isTemplate = true
+        image.size = size
+        return image
+    }
+
+    private func removeStatusItem() {
+        guard let statusItem else { return }
+        NSStatusBar.system.removeStatusItem(statusItem)
+        self.statusItem = nil
+        toggleMenuItem = nil
+    }
+
+    private func syncStatusItemVisibility() {
+        if settings.isStatusItemVisible {
+            setupStatusItem()
+            statusItem?.button?.image = makeStatusBarTemplateIcon()
+        } else {
+            removeStatusItem()
+        }
+    }
+
+    @objc
+    private func toggleTracking() {
+        settings.isTrackingEnabled.toggle()
+        applySettings(persist: true)
+    }
+
+    @objc
+    private func openSettingsWindow() {
+        if settingsWindowController == nil {
+            let controller = SettingsWindowController(initialSettings: settings)
+            controller.onSettingsChanged = { [weak self] newSettings in
+                self?.settings = newSettings
+                self?.applySettings(persist: true, syncWindow: false)
+            }
+            controller.onRequestInputMonitoringPermission = { [weak self] in
+                self?.requestInputMonitoringPermissionAndRegister()
+            }
+            settingsWindowController = controller
+        }
+        settingsWindowController?.updateSettings(settings)
+        settingsWindowController?.present()
+    }
+
+    private func requestInputMonitoringPermissionAndRegister() {
+        NSApp.activate(ignoringOtherApps: true)
+        probeInputMonitoringEventTap()
+        probeInputMonitoringEventTap()
+
+        globalShortcutMonitor.stop()
+        isGlobalShortcutMonitorActive = globalShortcutMonitor.start()
+        let after = CGPreflightListenEventAccess()
+        AppLogger.shared.log("global shortcut monitor restarted after permission request: \(isGlobalShortcutMonitorActive), listenGranted=\(after)")
+    }
+
+    private func probeInputMonitoringEventTap() {
+        let eventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue)
+
+        let callback: CGEventTapCallBack = { _, _, event, _ in
+            Unmanaged.passUnretained(event)
+        }
+
+        guard
+            let tap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: CGEventMask(eventMask),
+                callback: callback,
+                userInfo: nil
+            )
+        else {
+            return
+        }
+
+        CGEvent.tapEnable(tap: tap, enable: false)
+        CFMachPortInvalidate(tap)
+    }
+
+    @objc
+    private func clearTrail() {
+        overlayManager.clear()
+    }
+
+    private func applySettings(persist: Bool, syncWindow: Bool = true) {
+        AppLogger.shared.setEnabled(settings.isLoggingEnabled)
+        settings.trailWidth = clampTrailWidth(Double(settings.trailWidth))
+        settings.trailLengthMilliseconds = clampTrailLengthMilliseconds(settings.trailLengthMilliseconds)
+        settings.clickEffectRadius = clampClickEffectRadius(Double(settings.clickEffectRadius))
+        settings.magnifierRadius = clampMagnifierRadius(Double(settings.magnifierRadius))
+        settings.magnifierZoom = clampMagnifierZoom(Double(settings.magnifierZoom))
+        settings.magnifierBorderWidth = clampMagnifierBorderWidth(Double(settings.magnifierBorderWidth))
+        settings.magnifierShadowOpacity = clampMagnifierShadowOpacity(Double(settings.magnifierShadowOpacity))
+        if settings.rainbowTrailColors.count < 2 {
+            settings.rainbowTrailColors = AppSettings.default.rainbowTrailColors
+        }
+        syncLaunchAtLoginIfNeeded()
+        syncStatusItemVisibility()
+        overlayManager.setSettings(settings)
+        overlayManager.setTrackingEnabled(settings.isTrackingEnabled)
+        if !settings.isMagnifierEnabled || !settings.isTrackingEnabled {
+            isMagnifierShortcutHeld = false
+            overlayManager.setMagnifierActive(false)
+        }
+        syncScrollInterceptionState()
+
+        toggleMenuItem?.title = settings.isTrackingEnabled ? "关闭轨迹显示" : "开启轨迹显示"
+
+        if persist {
+            settingsStore.saveSettings(settings)
+            AppLogger.shared.log("settings saved: tracking=\(settings.isTrackingEnabled), clickEffects=\(settings.isClickEffectsEnabled), magnifier=\(settings.isMagnifierEnabled), intensity=\(settings.intensityPreset.rawValue)")
+        }
+        if syncWindow {
+            settingsWindowController?.updateSettings(settings)
+        }
+    }
+
+    private func handleRawEvent(_ event: NSEvent) {
+        if isGlobalShortcutMonitorActive {
+            return
+        }
+        if settingsWindowController?.isRecordingShortcut == true {
+            return
+        }
+        guard let input = shortcutInputEvent(from: event) else { return }
+        handleShortcutInput(input)
+    }
+
+    private func handleShortcutInput(_ input: ShortcutInputEvent) {
+        if settingsWindowController?.isRecordingShortcut == true {
+            return
+        }
+        guard settings.isMagnifierEnabled else {
+            if isMagnifierShortcutHeld {
+                isMagnifierShortcutHeld = false
+                overlayManager.setMagnifierActive(false)
+            }
+            syncScrollInterceptionState()
+            return
+        }
+        let shortcut = settings.magnifierShortcut
+        if shortcut.matchesPress(input: input) {
+            if !isMagnifierShortcutHeld {
+                isMagnifierShortcutHeld = true
+                overlayManager.setMagnifierActive(true)
+                AppLogger.shared.log("magnifier shortcut pressed")
+                syncScrollInterceptionState()
+            }
+        } else if shortcut.matchesRelease(input: input) {
+            if isMagnifierShortcutHeld {
+                isMagnifierShortcutHeld = false
+                overlayManager.setMagnifierActive(false)
+                AppLogger.shared.log("magnifier shortcut released")
+                syncScrollInterceptionState()
+            }
+        }
+    }
+
+    private func syncScrollInterceptionState() {
+        let wantsConsume = isMagnifierShortcutHeld && settings.isMagnifierEnabled
+        if wantsConsume {
+            if !globalScrollInterceptor.isRunning {
+                let started = globalScrollInterceptor.start()
+                AppLogger.shared.log("global scroll interceptor restarted: \(started)")
+                if !started {
+                    requestAccessibilityPermissionForScrollInterceptionIfNeeded()
+                }
+            }
+            let canConsume = globalScrollInterceptor.isRunning
+            globalScrollInterceptor.setConsumesScroll(canConsume)
+            if wantsConsume, !canConsume {
+                AppLogger.shared.log("scroll interception degraded: magnifier active but interceptor unavailable; wheel may pass through")
+            }
+        } else {
+            globalScrollInterceptor.setConsumesScroll(false)
+            if globalScrollInterceptor.isRunning {
+                globalScrollInterceptor.stop()
+                AppLogger.shared.log("global scroll interceptor paused")
+            }
+        }
+        let effectiveConsume = wantsConsume && globalScrollInterceptor.isRunning
+        if lastLoggedScrollConsumeState != effectiveConsume {
+            AppLogger.shared.log(
+                "sync scroll interception: requested=\(wantsConsume), effective=\(effectiveConsume), shortcutHeld=\(isMagnifierShortcutHeld), magnifierEnabled=\(settings.isMagnifierEnabled), trackingEnabled=\(settings.isTrackingEnabled)"
+            )
+            lastLoggedScrollConsumeState = effectiveConsume
+        }
+    }
+
+    private func requestAccessibilityPermissionForScrollInterceptionIfNeeded() {
+        guard !hasPromptedAccessibilityForScrollInterception else { return }
+        guard !AXIsProcessTrusted() else { return }
+        hasPromptedAccessibilityForScrollInterception = true
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        let trustedAfterPrompt = AXIsProcessTrustedWithOptions(options)
+        AppLogger.shared.log("scroll interception requested accessibility permission, trustedAfterPrompt=\(trustedAfterPrompt)")
+    }
+
+    private func syncLaunchAtLoginIfNeeded() {
+        guard lastAppliedLaunchAtLoginState != settings.isLaunchAtLoginEnabled else { return }
+        _ = launchAtLoginManager.setEnabled(settings.isLaunchAtLoginEnabled)
+        lastAppliedLaunchAtLoginState = settings.isLaunchAtLoginEnabled
+    }
+
+    @objc
+    private func quitApp() {
+        NSApp.terminate(nil)
+    }
+}
+
+@main
+enum CursorTrailBarApp {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+}
