@@ -41,6 +41,7 @@
 
 - 开机启动（macOS 13+）
 - 菜单栏图标显示开关
+- 语言切换（内置简体中文 / English）
 - 日志输出与日志目录快捷打开
 - 权限状态提示（输入监控 / 屏幕录制 / 辅助功能）
 
@@ -119,6 +120,48 @@ dist/CursorTrailBar.app
 
 ---
 
+## 🌐 多语言与语言包
+
+- 在设置页 `设置 -> 常规 -> 语言` 可切换语言
+- 在 `设置 -> 常规 -> 语言包目录` 可打开语言包文件夹
+- 首次运行会自动写入 `zh-Hans.json` 与 `en.json` 两个默认语言包
+- 实际可选语言严格由该目录中的语言包文件决定
+- 若目录中读取不到任何语言包文件，应用会回退为**仅简体中文**
+
+语言包目录（自动创建）：
+
+```text
+~/Library/Application Support/CursorTrailBar/LanguagePacks
+```
+
+你可以放入自定义 JSON 文件（后缀 `.json`），格式支持两种：
+
+1) 带元信息格式（推荐）：
+
+```json
+{
+  "code": "ja",
+  "name": "日本語",
+  "strings": {
+    "sidebar.trailEffects": "軌跡エフェクト",
+    "menu.quit": "終了"
+  }
+}
+```
+
+2) 纯键值格式（语言代码默认取文件名）：
+
+```json
+{
+  "sidebar.trailEffects": "Trail Effects (Custom)",
+  "menu.quit": "Quit (Custom)"
+}
+```
+
+> 修改或新增语言包后，重新聚焦设置窗口即可刷新语言列表。
+
+---
+
 ## 🧭 项目结构（MVC）
 
 ```text
@@ -135,6 +178,7 @@ Sources/CursorTrailBar/
 │  └─ SettingsWindowController.swift
 ├─ Services/
 │  ├─ SettingsStore.swift
+│  ├─ LocalizationManager.swift
 │  ├─ MouseMonitor.swift
 │  ├─ GlobalShortcutMonitor.swift
 │  ├─ GlobalScrollInterceptor.swift
@@ -186,4 +230,3 @@ Sources/CursorTrailBar/
 ## 📄 License
 
 请根据你的 GitHub 仓库选择更新（如 `MIT` / `Apache-2.0`）。
-

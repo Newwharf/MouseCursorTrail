@@ -33,11 +33,11 @@ enum MouseButtonKind: String, CaseIterable {
     var title: String {
         switch self {
         case .left:
-            return "左键"
+            return i18n("mouse.left", "左键")
         case .right:
-            return "右键"
+            return i18n("mouse.right", "右键")
         case .middle:
-            return "中键"
+            return i18n("mouse.middle", "中键")
         }
     }
 }
@@ -52,13 +52,13 @@ enum EffectIntensityPreset: String, CaseIterable {
     var title: String {
         switch self {
         case .off:
-            return "关闭"
+            return i18n("effectIntensity.off", "关闭")
         case .low:
-            return "低（省资源）"
+            return i18n("effectIntensity.low", "低（省资源）")
         case .normal:
-            return "中（默认）"
+            return i18n("effectIntensity.normal", "中（默认）")
         case .high:
-            return "高（炫彩）"
+            return i18n("effectIntensity.high", "高（炫彩）")
         }
     }
 
@@ -154,10 +154,10 @@ enum TrailRenderStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .neon: return "双层霓虹"
-        case .ribbon: return "渐隐丝带"
-        case .rainbow: return "彩虹拖尾"
-        case .lightning: return "闪电轨迹"
+        case .neon: return i18n("trailStyle.neon", "双层霓虹")
+        case .ribbon: return i18n("trailStyle.ribbon", "渐隐丝带")
+        case .rainbow: return i18n("trailStyle.rainbow", "彩虹拖尾")
+        case .lightning: return i18n("trailStyle.lightning", "闪电轨迹")
         }
     }
 }
@@ -170,9 +170,9 @@ enum TrailEffectStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .particles: return "粒子火花"
-        case .ink: return "墨迹扩散"
-        case .electric: return "电弧闪点"
+        case .particles: return i18n("trailEffect.particles", "粒子火花")
+        case .ink: return i18n("trailEffect.ink", "墨迹扩散")
+        case .electric: return i18n("trailEffect.electric", "电弧闪点")
         }
     }
 }
@@ -184,7 +184,7 @@ enum SpeedBurstEffectType: String, CaseIterable {
     var title: String {
         switch self {
         case .firstFlash:
-            return "一之闪"
+            return i18n("speedBurstType.firstFlash", "一之闪")
         }
     }
 }
@@ -196,8 +196,8 @@ enum ClickVisualStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .solidPulse: return "实心脉冲"
-        case .crossFlare: return "十字闪光"
+        case .solidPulse: return i18n("clickStyle.solidPulse", "实心脉冲")
+        case .crossFlare: return i18n("clickStyle.crossFlare", "十字闪光")
         }
     }
 }
@@ -352,13 +352,13 @@ struct MagnifierShortcut {
         case .mouse:
             let mouseText = switch mouseButton {
             case .left?:
-                "左键"
+                i18n("mouse.left", "左键")
             case .right?:
-                "右键"
+                i18n("mouse.right", "右键")
             case .middle?:
-                "中键"
+                i18n("mouse.middle", "中键")
             case nil:
-                "鼠标键"
+                i18n("mouse.button", "鼠标键")
             }
             return modifierText + mouseText
         }
@@ -441,6 +441,7 @@ struct AppSettings {
     var isTrackingEnabled: Bool
     var isClickEffectsEnabled: Bool
     var isMagnifierEnabled: Bool
+    var languageCode: String
     var trailColor: NSColor
     var trailEffectColor: NSColor
     var trailStyle: TrailRenderStyle
@@ -495,6 +496,7 @@ struct AppSettings {
         isTrackingEnabled: true,
         isClickEffectsEnabled: true,
         isMagnifierEnabled: true,
+        languageCode: LocalizationManager.shared.defaultLanguageCode,
         trailColor: colorFromHexRGB(0xFFD84A),
         trailEffectColor: colorFromHexRGB(0xFFB84D),
         trailStyle: .lightning,

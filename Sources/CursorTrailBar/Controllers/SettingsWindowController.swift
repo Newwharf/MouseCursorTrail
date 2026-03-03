@@ -24,10 +24,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         var title: String {
             switch self {
-            case .trailEffects: return "轨迹效果"
-            case .clickEffects: return "点击效果"
-            case .magnifier: return "放大镜"
-            case .general: return "设置"
+            case .trailEffects: return i18n("sidebar.trailEffects", "轨迹效果")
+            case .clickEffects: return i18n("sidebar.clickEffects", "点击效果")
+            case .magnifier: return i18n("sidebar.magnifier", "放大镜")
+            case .general: return i18n("sidebar.general", "设置")
             }
         }
 
@@ -48,9 +48,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         var title: String {
             switch self {
             case .custom:
-                return "自定义"
+                return i18n("preset.custom", "自定义")
             case .thunderFirstForm:
-                return "雷之呼吸·壹之型"
+                return i18n("preset.thunderFirstForm", "雷之呼吸·壹之型")
             }
         }
     }
@@ -125,43 +125,46 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let clickStylePopup = NSPopUpButton()
     private let intensityPopup = NSPopUpButton()
     private let trailPresetPopup = NSPopUpButton()
+    private let languagePopup = NSPopUpButton()
     private let magnifierShortcutButton = NSButton(title: "", target: nil, action: nil)
-    private let magnifierShortcutHint = NSTextField(labelWithString: "点击录制后按下按键/鼠标键，按住即可触发放大镜。")
+    private let magnifierShortcutHint = NSTextField(labelWithString: "")
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
 
     private let inputMonitoringStatusLabel = NSTextField(labelWithString: "")
     private let accessibilityStatusLabel = NSTextField(labelWithString: "")
     private let screenCaptureStatusLabel = NSTextField(labelWithString: "")
-    private let openInputMonitoringSettingsButton = NSButton(title: "前往输入监控设置", target: nil, action: nil)
-    private let openAccessibilitySettingsButton = NSButton(title: "前往辅助功能设置", target: nil, action: nil)
-    private let openScreenCaptureSettingsButton = NSButton(title: "前往屏幕录制设置", target: nil, action: nil)
-    private let openLogFolderButton = NSButton(title: "打开日志文件夹", target: nil, action: nil)
+    private let openInputMonitoringSettingsButton = NSButton(title: "", target: nil, action: nil)
+    private let openAccessibilitySettingsButton = NSButton(title: "", target: nil, action: nil)
+    private let openScreenCaptureSettingsButton = NSButton(title: "", target: nil, action: nil)
+    private let openLogFolderButton = NSButton(title: "", target: nil, action: nil)
+    private let openLanguagePacksFolderButton = NSButton(title: "", target: nil, action: nil)
     private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
+    private var availableLanguageOptions: [LanguageOption] = []
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
     private lazy var trailPresetHeaderControl = makeTrailPresetHeaderControl()
 
-    private lazy var trailTypeRow = makePopupRow(title: "轨迹类型", popup: trailStylePopup)
-    private lazy var trailColorRow = makeColorRow(title: "轨迹颜色", control: trailColorWell)
-    private lazy var trailEffectColorRow = makeColorRow(title: "特效颜色", control: trailEffectColorWell)
+    private lazy var trailTypeRow = makePopupRow(title: i18n("row.trail.type", "轨迹类型"), popup: trailStylePopup)
+    private lazy var trailColorRow = makeColorRow(title: i18n("row.trail.color", "轨迹颜色"), control: trailColorWell)
+    private lazy var trailEffectColorRow = makeColorRow(title: i18n("row.trail.effectColor", "特效颜色"), control: trailEffectColorWell)
     private lazy var neonColorsRow = makeNeonColorsRow()
     private lazy var rainbowColorsRow = makeRainbowColorsRow()
-    private lazy var trailEffectTypeRow = makePopupRow(title: "特效类型", popup: trailEffectPopup)
-    private lazy var trailWidthRow = makeSliderRow(title: "轨迹粗细", slider: trailWidthSlider, valueLabel: trailWidthValueLabel)
-    private lazy var trailLengthRow = makeSliderRow(title: "轨迹长度（毫秒）", slider: trailLengthSlider, valueLabel: trailLengthValueLabel)
-    private lazy var trailIntensityRow = makePopupRow(title: "特效强度", popup: intensityPopup)
-    private lazy var speedBurstTypeRow = makePopupRow(title: "爆发类型", popup: speedBurstTypePopup)
-    private lazy var speedBurstLineColorRow = makeColorRow(title: "爆发线颜色", control: speedBurstLineColorWell)
-    private lazy var speedBurstAccentColorRow = makeColorRow(title: "端点爆发颜色", control: speedBurstAccentColorWell)
-    private lazy var speedBurstVelocityRow = makeSliderRow(title: "触发速度阈值", slider: speedBurstVelocitySlider, valueLabel: speedBurstVelocityValueLabel)
-    private lazy var speedBurstCooldownRow = makeSliderRow(title: "冷却时间（毫秒）", slider: speedBurstCooldownSlider, valueLabel: speedBurstCooldownValueLabel)
-    private lazy var speedBurstDurationRow = makeSliderRow(title: "爆发线时长（毫秒）", slider: speedBurstDurationSlider, valueLabel: speedBurstDurationValueLabel)
-    private lazy var speedBurstJitterRow = makeSliderRow(title: "爆发线抖动幅度", slider: speedBurstJitterSlider, valueLabel: speedBurstJitterValueLabel)
-    private lazy var speedBurstMinLengthRow = makeSliderRow(title: "爆发线最小长度", slider: speedBurstMinLengthSlider, valueLabel: speedBurstMinLengthValueLabel)
-    private lazy var speedBurstMaxLengthRow = makeSliderRow(title: "爆发线最大长度", slider: speedBurstMaxLengthSlider, valueLabel: speedBurstMaxLengthValueLabel)
-    private lazy var speedBurstWidthMultiplierRow = makeSliderRow(title: "爆发线宽系数", slider: speedBurstWidthMultiplierSlider, valueLabel: speedBurstWidthMultiplierValueLabel)
-    private lazy var speedBurstAccentDurationRow = makeSliderRow(title: "端点爆发时长（毫秒）", slider: speedBurstAccentDurationSlider, valueLabel: speedBurstAccentDurationValueLabel)
-    private lazy var speedBurstAccentSizeRow = makeSliderRow(title: "端点爆发大小", slider: speedBurstAccentSizeSlider, valueLabel: speedBurstAccentSizeValueLabel)
-    private lazy var clickDurationRow = makeSliderRow(title: "点击效果时长（毫秒）", slider: clickDurationSlider, valueLabel: clickDurationValueLabel)
+    private lazy var trailEffectTypeRow = makePopupRow(title: i18n("row.trail.effectType", "特效类型"), popup: trailEffectPopup)
+    private lazy var trailWidthRow = makeSliderRow(title: i18n("row.trail.width", "轨迹粗细"), slider: trailWidthSlider, valueLabel: trailWidthValueLabel)
+    private lazy var trailLengthRow = makeSliderRow(title: i18n("row.trail.lengthMs", "轨迹长度（毫秒）"), slider: trailLengthSlider, valueLabel: trailLengthValueLabel)
+    private lazy var trailIntensityRow = makePopupRow(title: i18n("row.trail.intensity", "特效强度"), popup: intensityPopup)
+    private lazy var speedBurstTypeRow = makePopupRow(title: i18n("row.speedBurst.type", "爆发类型"), popup: speedBurstTypePopup)
+    private lazy var speedBurstLineColorRow = makeColorRow(title: i18n("row.speedBurst.lineColor", "爆发线颜色"), control: speedBurstLineColorWell)
+    private lazy var speedBurstAccentColorRow = makeColorRow(title: i18n("row.speedBurst.accentColor", "端点爆发颜色"), control: speedBurstAccentColorWell)
+    private lazy var speedBurstVelocityRow = makeSliderRow(title: i18n("row.speedBurst.velocity", "触发速度阈值"), slider: speedBurstVelocitySlider, valueLabel: speedBurstVelocityValueLabel)
+    private lazy var speedBurstCooldownRow = makeSliderRow(title: i18n("row.speedBurst.cooldown", "冷却时间（毫秒）"), slider: speedBurstCooldownSlider, valueLabel: speedBurstCooldownValueLabel)
+    private lazy var speedBurstDurationRow = makeSliderRow(title: i18n("row.speedBurst.duration", "爆发线时长（毫秒）"), slider: speedBurstDurationSlider, valueLabel: speedBurstDurationValueLabel)
+    private lazy var speedBurstJitterRow = makeSliderRow(title: i18n("row.speedBurst.jitter", "爆发线抖动幅度"), slider: speedBurstJitterSlider, valueLabel: speedBurstJitterValueLabel)
+    private lazy var speedBurstMinLengthRow = makeSliderRow(title: i18n("row.speedBurst.minLength", "爆发线最小长度"), slider: speedBurstMinLengthSlider, valueLabel: speedBurstMinLengthValueLabel)
+    private lazy var speedBurstMaxLengthRow = makeSliderRow(title: i18n("row.speedBurst.maxLength", "爆发线最大长度"), slider: speedBurstMaxLengthSlider, valueLabel: speedBurstMaxLengthValueLabel)
+    private lazy var speedBurstWidthMultiplierRow = makeSliderRow(title: i18n("row.speedBurst.widthMultiplier", "爆发线宽系数"), slider: speedBurstWidthMultiplierSlider, valueLabel: speedBurstWidthMultiplierValueLabel)
+    private lazy var speedBurstAccentDurationRow = makeSliderRow(title: i18n("row.speedBurst.accentDuration", "端点爆发时长（毫秒）"), slider: speedBurstAccentDurationSlider, valueLabel: speedBurstAccentDurationValueLabel)
+    private lazy var speedBurstAccentSizeRow = makeSliderRow(title: i18n("row.speedBurst.accentSize", "端点爆发大小"), slider: speedBurstAccentSizeSlider, valueLabel: speedBurstAccentSizeValueLabel)
+    private lazy var clickDurationRow = makeSliderRow(title: i18n("row.click.duration", "点击效果时长（毫秒）"), slider: clickDurationSlider, valueLabel: clickDurationValueLabel)
 
     private var clickToggleButtons: [MouseButtonKind: NSSwitch] = [:]
     private var clickColorWells: [MouseButtonKind: NSColorWell] = [:]
@@ -179,7 +182,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "CursorTrailBar 设置"
+        window.title = i18n("window.settings.title", "CursorTrailBar 设置")
         window.center()
         window.minSize = NSSize(width: 820, height: 740)
         window.isReleasedWhenClosed = false
@@ -579,6 +582,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         trailPresetPopup.addItems(withTitles: TrailPresetOption.allCases.map(\.title))
         trailPresetPopup.selectItem(at: 0)
 
+        languagePopup.target = self
+        languagePopup.action = #selector(languageChanged(_:))
+        refreshLanguageOptions(reloadFromDisk: true)
+
         for (index, colorWell) in rainbowColorWells.enumerated() {
             colorWell.tag = index
             colorWell.target = self
@@ -597,7 +604,30 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         openScreenCaptureSettingsButton.action = #selector(openScreenCaptureSettings(_:))
         openLogFolderButton.target = self
         openLogFolderButton.action = #selector(openLogFolder(_:))
+        openLanguagePacksFolderButton.target = self
+        openLanguagePacksFolderButton.action = #selector(openLanguagePacksFolder(_:))
 
+        magnifierShortcutHint.stringValue = i18n("hint.magnifier.shortcut", "点击录制后按下按键/鼠标键，按住即可触发放大镜。")
+        openInputMonitoringSettingsButton.title = i18n("button.permission.inputMonitoring", "前往输入监控设置")
+        openAccessibilitySettingsButton.title = i18n("button.permission.accessibility", "前往辅助功能设置")
+        openScreenCaptureSettingsButton.title = i18n("button.permission.screenCapture", "前往屏幕录制设置")
+        openLogFolderButton.title = i18n("button.openLogFolder", "打开日志文件夹")
+        openLanguagePacksFolderButton.title = i18n("button.openLanguagePackFolder", "打开目录")
+    }
+
+    private func refreshLanguageOptions(reloadFromDisk: Bool) {
+        if reloadFromDisk {
+            LocalizationManager.shared.reloadCustomLanguagePacks()
+        }
+        availableLanguageOptions = LocalizationManager.shared.availableLanguages()
+        languagePopup.removeAllItems()
+        languagePopup.addItems(withTitles: availableLanguageOptions.map(\.displayName))
+        if let index = availableLanguageOptions.firstIndex(where: { $0.code == settings.languageCode }) {
+            languagePopup.selectItem(at: index)
+        } else if let first = availableLanguageOptions.first {
+            settings.languageCode = first.code
+            languagePopup.selectItem(at: 0)
+        }
     }
 
     private func configureSliders() {
@@ -654,24 +684,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         launchAtLoginStatusLabel.font = .systemFont(ofSize: 11)
         launchAtLoginStatusLabel.textColor = .secondaryLabelColor
         return makeSectionCard(
-            title: "常规",
-            subtitle: "开机与常驻相关设置",
+            title: i18n("section.general.title", "常规"),
+            subtitle: i18n("section.general.subtitle", "开机与常驻相关设置"),
             rows: [
-                makeSwitchRow(title: "开机启动", subtitleLabel: launchAtLoginStatusLabel, toggle: launchAtLoginSwitch),
-                makeSwitchRow(title: "启用日志输出", subtitle: "写入日志文件以便排查问题", toggle: loggingSwitch),
-                makeButtonRow(title: "日志目录", button: openLogFolderButton),
-                makeSwitchRow(title: "菜单栏显示图标", subtitle: "关闭后仅保留主界面与全局功能", toggle: statusItemSwitch),
+                makeSwitchRow(title: i18n("row.launchAtLogin.title", "开机启动"), subtitleLabel: launchAtLoginStatusLabel, toggle: launchAtLoginSwitch),
+                makeSwitchRow(title: i18n("row.logging.title", "启用日志输出"), subtitle: i18n("row.logging.subtitle", "写入日志文件以便排查问题"), toggle: loggingSwitch),
+                makeButtonRow(title: i18n("row.logFolder.title", "日志目录"), button: openLogFolderButton),
+                makeSwitchRow(title: i18n("row.statusItem.title", "菜单栏显示图标"), subtitle: i18n("row.statusItem.subtitle", "关闭后仅保留主界面与全局功能"), toggle: statusItemSwitch),
+                makeLanguageRow(),
             ]
         )
     }
 
     private func buildTrailSection() -> NSView {
         return makeSectionCard(
-            title: "轨迹",
-            subtitle: "鼠标轨迹与基础特效参数",
+            title: i18n("section.trail.title", "轨迹"),
+            subtitle: i18n("section.trail.subtitle", "鼠标轨迹与基础特效参数"),
             headerTrailing: trailPresetHeaderControl,
             rows: [
-                makeSwitchRow(title: "开启轨迹", subtitle: "关闭后不再绘制轨迹", toggle: trackingSwitch),
+                makeSwitchRow(title: i18n("row.tracking.title", "开启轨迹"), subtitle: i18n("row.tracking.subtitle", "关闭后不再绘制轨迹"), toggle: trackingSwitch),
                 trailTypeRow,
                 trailColorRow,
                 neonColorsRow,
@@ -687,10 +718,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func buildSpeedBurstSection() -> NSView {
         return makeSectionCard(
-            title: "加速爆发",
-            subtitle: "高速移动触发的额外爆发特效",
+            title: i18n("section.speedBurst.title", "加速爆发"),
+            subtitle: i18n("section.speedBurst.subtitle", "高速移动触发的额外爆发特效"),
             rows: [
-                makeSwitchRow(title: "开启加速爆发", subtitle: "关闭后将不触发一之闪", toggle: speedBurstSwitch),
+                makeSwitchRow(title: i18n("row.speedBurst.enabled", "开启加速爆发"), subtitle: i18n("row.speedBurst.enabled.subtitle", "关闭后将不触发一之闪"), toggle: speedBurstSwitch),
                 speedBurstTypeRow,
                 speedBurstVelocityRow,
                 speedBurstCooldownRow,
@@ -709,9 +740,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func buildClickSection() -> NSView {
         var rows: [NSView] = [
-            makeSwitchRow(title: "开启点击效果", subtitle: "关闭后不显示点击特效", toggle: clickEffectsSwitch),
-            makePopupRow(title: "点击样式", popup: clickStylePopup),
-            makeSliderRow(title: "点击效果半径", slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel),
+            makeSwitchRow(title: i18n("row.click.enabled", "开启点击效果"), subtitle: i18n("row.click.enabled.subtitle", "关闭后不显示点击特效"), toggle: clickEffectsSwitch),
+            makePopupRow(title: i18n("row.click.style", "点击样式"), popup: clickStylePopup),
+            makeSliderRow(title: i18n("row.click.radius", "点击效果半径"), slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel),
             clickDurationRow,
         ]
 
@@ -728,7 +759,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             clickColorWells[button] = colorWell
             colorWellToKind[ObjectIdentifier(colorWell)] = button
 
-            let title = NSTextField(labelWithString: "\(button.title) 点击效果")
+            let title = NSTextField(labelWithString: i18n("row.click.perButtonTitle", "%@ 点击效果", button.title))
             title.font = .systemFont(ofSize: 13, weight: .medium)
 
             let row = NSStackView(views: [title, NSView(), toggle, colorWell])
@@ -740,8 +771,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
 
         return makeSectionCard(
-            title: "点击",
-            subtitle: "点击特效开关、半径与各键位配色",
+            title: i18n("section.click.title", "点击"),
+            subtitle: i18n("section.click.subtitle", "点击特效开关、半径与各键位配色"),
             rows: rows
         )
     }
@@ -754,16 +785,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         magnifierShortcutHint.font = .systemFont(ofSize: 12)
 
         return makeSectionCard(
-            title: "放大镜",
-            subtitle: "快捷键放大、视觉参数与权限入口",
+            title: i18n("section.magnifier.title", "放大镜"),
+            subtitle: i18n("section.magnifier.subtitle", "快捷键放大、视觉参数与权限入口"),
             rows: [
-                makeSwitchRow(title: "开启放大镜", subtitle: "关闭后快捷键不再触发放大镜", toggle: magnifierEnabledSwitch),
-                makeSwitchRow(title: "放大时显示轨迹与特效", subtitle: "关闭后放大时只显示放大内容", toggle: magnifierShowEffectsSwitch),
-                makeSliderRow(title: "放大镜半径", slider: magnifierRadiusSlider, valueLabel: magnifierRadiusValueLabel),
-                makeSliderRow(title: "放大倍率", slider: magnifierZoomSlider, valueLabel: magnifierZoomValueLabel),
-                makeSliderRow(title: "边框粗细", slider: magnifierBorderWidthSlider, valueLabel: magnifierBorderWidthValueLabel),
-                makeColorRow(title: "边框颜色", control: magnifierBorderColorWell),
-                makeSliderRow(title: "阴影强度", slider: magnifierShadowSlider, valueLabel: magnifierShadowValueLabel),
+                makeSwitchRow(title: i18n("row.magnifier.enabled", "开启放大镜"), subtitle: i18n("row.magnifier.enabled.subtitle", "关闭后快捷键不再触发放大镜"), toggle: magnifierEnabledSwitch),
+                makeSwitchRow(title: i18n("row.magnifier.showEffects", "放大时显示轨迹与特效"), subtitle: i18n("row.magnifier.showEffects.subtitle", "关闭后放大时只显示放大内容"), toggle: magnifierShowEffectsSwitch),
+                makeSliderRow(title: i18n("row.magnifier.radius", "放大镜半径"), slider: magnifierRadiusSlider, valueLabel: magnifierRadiusValueLabel),
+                makeSliderRow(title: i18n("row.magnifier.zoom", "放大倍率"), slider: magnifierZoomSlider, valueLabel: magnifierZoomValueLabel),
+                makeSliderRow(title: i18n("row.magnifier.borderWidth", "边框粗细"), slider: magnifierBorderWidthSlider, valueLabel: magnifierBorderWidthValueLabel),
+                makeColorRow(title: i18n("row.magnifier.borderColor", "边框颜色"), control: magnifierBorderColorWell),
+                makeSliderRow(title: i18n("row.magnifier.shadow", "阴影强度"), slider: magnifierShadowSlider, valueLabel: magnifierShadowValueLabel),
                 makeShortcutRecordRow(),
                 makeStatusActionRow(statusLabel: inputMonitoringStatusLabel, actionButton: openInputMonitoringSettingsButton),
                 makeStatusActionRow(statusLabel: accessibilityStatusLabel, actionButton: openAccessibilitySettingsButton),
@@ -773,7 +804,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func makeTrailPresetHeaderControl() -> NSView {
-        let label = NSTextField(labelWithString: "风格预设")
+        let label = NSTextField(labelWithString: i18n("label.trailPreset", "风格预设"))
         label.font = .systemFont(ofSize: 11, weight: .medium)
         label.textColor = .secondaryLabelColor
         label.setContentHuggingPriority(.required, for: .horizontal)
@@ -910,7 +941,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func makeShortcutRecordRow() -> NSView {
-        let row = makeButtonRow(title: "放大镜快捷键", button: magnifierShortcutButton)
+        let row = makeButtonRow(title: i18n("row.magnifier.shortcut", "放大镜快捷键"), button: magnifierShortcutButton)
         let stack = NSStackView(views: [row, magnifierShortcutHint])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -928,7 +959,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func makeRainbowColorsRow() -> NSView {
-        let label = NSTextField(labelWithString: "彩虹颜色")
+        let label = NSTextField(labelWithString: i18n("row.trail.rainbowColors", "彩虹颜色"))
         label.setContentHuggingPriority(.required, for: .horizontal)
         let wellsStack = NSStackView(views: rainbowColorWells)
         wellsStack.orientation = .horizontal
@@ -943,10 +974,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func makeNeonColorsRow() -> NSView {
-        let label = NSTextField(labelWithString: "霓虹颜色")
+        let label = NSTextField(labelWithString: i18n("row.trail.neonColors", "霓虹颜色"))
         label.setContentHuggingPriority(.required, for: .horizontal)
-        let first = labeledColorWell("主色", colorWell: neonPrimaryColorWell)
-        let second = labeledColorWell("辅色", colorWell: neonSecondaryColorWell)
+        let first = labeledColorWell(i18n("row.trail.neonPrimary", "主色"), colorWell: neonPrimaryColorWell)
+        let second = labeledColorWell(i18n("row.trail.neonSecondary", "辅色"), colorWell: neonSecondaryColorWell)
         let colors = NSStackView(views: [first, second])
         colors.orientation = .horizontal
         colors.alignment = .centerY
@@ -989,6 +1020,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         popup.setContentHuggingPriority(.required, for: .horizontal)
         let row = NSStackView(views: [label, NSView(), popup])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeLanguageRow() -> NSView {
+        let label = NSTextField(labelWithString: i18n("row.language.title", "语言"))
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        languagePopup.setContentHuggingPriority(.required, for: .horizontal)
+        languagePopup.translatesAutoresizingMaskIntoConstraints = false
+        languagePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 132).isActive = true
+
+        openLanguagePacksFolderButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = NSStackView(views: [label, NSView(), languagePopup, openLanguagePacksFolderButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.distribution = .fill
@@ -1060,6 +1110,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// Important: 通过 `isSyncingControls` 避免同步过程触发二次回写。
     private func syncControlsFromSettings() {
         isSyncingControls = true
+        window?.title = i18n("window.settings.title", "CursorTrailBar 设置")
 
         launchAtLoginSwitch.state = settings.isLaunchAtLoginEnabled ? .on : .off
         loggingSwitch.state = settings.isLoggingEnabled ? .on : .off
@@ -1119,9 +1170,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let index = ClickVisualStyle.allCases.firstIndex(of: settings.clickVisualStyle) {
             clickStylePopup.selectItem(at: index)
         }
+        if let index = availableLanguageOptions.firstIndex(where: { $0.code == settings.languageCode }) {
+            languagePopup.selectItem(at: index)
+        }
 
         magnifierShortcutButton.title = isShortcutRecording
-            ? "按下键盘/鼠标快捷键…(Esc取消)"
+            ? i18n("shortcut.recordingPrompt", "按下键盘/鼠标快捷键…(Esc取消)")
             : settings.magnifierShortcut.displayText
 
         for button in MouseButtonKind.allCases {
@@ -1139,15 +1193,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func refreshLaunchAtLoginHint() {
         guard #available(macOS 13.0, *) else {
-            launchAtLoginStatusLabel.stringValue = "当前系统版本不支持应用内开机启动控制。"
+            launchAtLoginStatusLabel.stringValue = i18n("status.launchAtLogin.unsupported", "当前系统版本不支持应用内开机启动控制。")
             launchAtLoginStatusLabel.textColor = .systemRed
             return
         }
         if settings.isLaunchAtLoginEnabled {
-            launchAtLoginStatusLabel.stringValue = "已请求开机启动；若未生效，请将 App 放到“应用程序”目录。"
+            launchAtLoginStatusLabel.stringValue = i18n("status.launchAtLogin.enabled", "已请求开机启动；若未生效，请将 App 放到“应用程序”目录。")
             launchAtLoginStatusLabel.textColor = .secondaryLabelColor
         } else {
-            launchAtLoginStatusLabel.stringValue = "开机启动已关闭。"
+            launchAtLoginStatusLabel.stringValue = i18n("status.launchAtLogin.disabled", "开机启动已关闭。")
             launchAtLoginStatusLabel.textColor = .secondaryLabelColor
         }
     }
@@ -1207,22 +1261,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateSliderValueLabels() {
-        trailWidthValueLabel.stringValue = "\(rounded(Double(settings.trailWidth))) px"
-        trailLengthValueLabel.stringValue = "\(Int(settings.trailLengthMilliseconds)) ms"
-        speedBurstVelocityValueLabel.stringValue = "\(Int(settings.speedBurstVelocityThreshold)) px/s"
-        speedBurstCooldownValueLabel.stringValue = "\(Int(settings.speedBurstCooldownMilliseconds)) ms"
-        speedBurstDurationValueLabel.stringValue = "\(Int(settings.speedBurstDurationMilliseconds)) ms"
+        let px = i18n("unit.px", "px")
+        let ms = i18n("unit.ms", "ms")
+        let pxps = i18n("unit.pxps", "px/s")
+        let multiplier = i18n("unit.multiplier", "x")
+        trailWidthValueLabel.stringValue = "\(rounded(Double(settings.trailWidth))) \(px)"
+        trailLengthValueLabel.stringValue = "\(Int(settings.trailLengthMilliseconds)) \(ms)"
+        speedBurstVelocityValueLabel.stringValue = "\(Int(settings.speedBurstVelocityThreshold)) \(pxps)"
+        speedBurstCooldownValueLabel.stringValue = "\(Int(settings.speedBurstCooldownMilliseconds)) \(ms)"
+        speedBurstDurationValueLabel.stringValue = "\(Int(settings.speedBurstDurationMilliseconds)) \(ms)"
         speedBurstJitterValueLabel.stringValue = "\(rounded(Double(settings.speedBurstJitterAmplitude)))"
-        speedBurstMinLengthValueLabel.stringValue = "\(Int(settings.speedBurstMinLength)) px"
-        speedBurstMaxLengthValueLabel.stringValue = "\(Int(settings.speedBurstMaxLength)) px"
-        speedBurstWidthMultiplierValueLabel.stringValue = "\(rounded(Double(settings.speedBurstWidthMultiplier))) x"
-        speedBurstAccentDurationValueLabel.stringValue = "\(Int(settings.speedBurstAccentDurationMilliseconds)) ms"
-        speedBurstAccentSizeValueLabel.stringValue = "\(Int(settings.speedBurstAccentSize)) px"
-        clickRadiusValueLabel.stringValue = "\(Int(settings.clickEffectRadius)) px"
-        clickDurationValueLabel.stringValue = "\(Int(settings.clickEffectDurationMilliseconds)) ms"
-        magnifierRadiusValueLabel.stringValue = "\(Int(settings.magnifierRadius)) px"
-        magnifierZoomValueLabel.stringValue = "\(rounded(Double(settings.magnifierZoom))) x"
-        magnifierBorderWidthValueLabel.stringValue = "\(rounded(Double(settings.magnifierBorderWidth))) px"
+        speedBurstMinLengthValueLabel.stringValue = "\(Int(settings.speedBurstMinLength)) \(px)"
+        speedBurstMaxLengthValueLabel.stringValue = "\(Int(settings.speedBurstMaxLength)) \(px)"
+        speedBurstWidthMultiplierValueLabel.stringValue = "\(rounded(Double(settings.speedBurstWidthMultiplier))) \(multiplier)"
+        speedBurstAccentDurationValueLabel.stringValue = "\(Int(settings.speedBurstAccentDurationMilliseconds)) \(ms)"
+        speedBurstAccentSizeValueLabel.stringValue = "\(Int(settings.speedBurstAccentSize)) \(px)"
+        clickRadiusValueLabel.stringValue = "\(Int(settings.clickEffectRadius)) \(px)"
+        clickDurationValueLabel.stringValue = "\(Int(settings.clickEffectDurationMilliseconds)) \(ms)"
+        magnifierRadiusValueLabel.stringValue = "\(Int(settings.magnifierRadius)) \(px)"
+        magnifierZoomValueLabel.stringValue = "\(rounded(Double(settings.magnifierZoom))) \(multiplier)"
+        magnifierBorderWidthValueLabel.stringValue = "\(rounded(Double(settings.magnifierBorderWidth))) \(px)"
         magnifierShadowValueLabel.stringValue = "\(rounded(Double(settings.magnifierShadowOpacity)))"
     }
 
@@ -1514,6 +1572,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
+    private func languageChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard availableLanguageOptions.indices.contains(index) else { return }
+        settings.languageCode = availableLanguageOptions[index].code
+        publishChanges()
+    }
+
+    @objc
     private func clickToggleChanged(_ sender: NSSwitch) {
         guard let button = toggleButtonToKind[ObjectIdentifier(sender)] else { return }
         var style = settings.effectStyle(for: button)
@@ -1582,20 +1648,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func refreshPermissionIndicators() {
         let listenGranted = CGPreflightListenEventAccess()
         inputMonitoringStatusLabel.stringValue = listenGranted
-            ? "输入监控权限：已授权 ✅"
-            : "输入监控权限：未授权 ❌（全局快捷键可能无效）"
+            ? i18n("status.inputMonitoring.granted", "输入监控权限：已授权 ✅")
+            : i18n("status.inputMonitoring.denied", "输入监控权限：未授权 ❌（全局快捷键可能无效）")
         inputMonitoringStatusLabel.textColor = listenGranted ? .systemGreen : .systemRed
 
         let accessibilityTrusted = AXIsProcessTrusted()
         accessibilityStatusLabel.stringValue = accessibilityTrusted
-            ? "辅助功能权限：已授权 ✅"
-            : "辅助功能权限：未授权 ❌（放大镜滚轮拦截会无效）"
+            ? i18n("status.accessibility.granted", "辅助功能权限：已授权 ✅")
+            : i18n("status.accessibility.denied", "辅助功能权限：未授权 ❌（放大镜滚轮拦截会无效）")
         accessibilityStatusLabel.textColor = accessibilityTrusted ? .systemGreen : .systemRed
 
         let screenGranted = CGPreflightScreenCaptureAccess()
         screenCaptureStatusLabel.stringValue = screenGranted
-            ? "屏幕录制权限：已授权 ✅"
-            : "屏幕录制权限：未授权 ❌（放大镜可能无法取屏）"
+            ? i18n("status.screenCapture.granted", "屏幕录制权限：已授权 ✅")
+            : i18n("status.screenCapture.denied", "屏幕录制权限：未授权 ❌（放大镜可能无法取屏）")
         screenCaptureStatusLabel.textColor = screenGranted ? .systemGreen : .systemRed
     }
 
@@ -1658,6 +1724,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSWorkspace.shared.open(url)
     }
 
+    @objc
+    private func openLanguagePacksFolder(_ sender: NSButton) {
+        let url = LocalizationManager.shared.languagePacksDirectoryURL()
+        NSWorkspace.shared.open(url)
+        refreshLanguageOptions(reloadFromDisk: true)
+        syncControlsFromSettings()
+    }
+
     private func openSystemSettings(urlStrings: [String]) {
         for item in urlStrings {
             guard let url = URL(string: item) else { continue }
@@ -1670,6 +1744,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
+        refreshLanguageOptions(reloadFromDisk: true)
+        syncControlsFromSettings()
         refreshPermissionIndicators()
     }
 

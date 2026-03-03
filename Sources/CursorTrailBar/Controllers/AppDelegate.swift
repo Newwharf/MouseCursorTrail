@@ -24,14 +24,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isMagnifierShortcutHeld = false
     private var isGlobalShortcutMonitorActive = false
     private var lastAppliedLaunchAtLoginState: Bool?
+    private var lastAppliedLanguageCode: String?
     private var lastLoggedScrollConsumeState: Bool?
     private var hasPromptedAccessibilityForScrollInterception = false
 
     /// 应用启动入口：加载配置、启动监听器并应用初始状态。
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        setupKeyboardShortcutMenu()
         settings = settingsStore.loadSettings()
+        LocalizationManager.shared.reloadCustomLanguagePacks()
+        LocalizationManager.shared.setLanguage(code: settings.languageCode)
+        settings.languageCode = LocalizationManager.shared.currentLanguageCode
+        lastAppliedLanguageCode = settings.languageCode
+        setupKeyboardShortcutMenu()
         seedThunderPresetIfNeeded()
         AppLogger.shared.setEnabled(settings.isLoggingEnabled)
         AppLogger.shared.log("application did finish launching")
@@ -116,7 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appRootItem = NSMenuItem()
         let appMenu = NSMenu(title: "CursorTrailBar")
-        let quitItem = NSMenuItem(title: "退出 CursorTrailBar", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(
+            title: i18n("menu.quitApp", "退出 CursorTrailBar"),
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        )
         quitItem.keyEquivalentModifierMask = [.command]
         quitItem.target = self
         appMenu.addItem(quitItem)
@@ -124,8 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appRootItem)
 
         let windowRootItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "窗口")
-        let closeItem = NSMenuItem(title: "关闭", action: #selector(closeMainWindow), keyEquivalent: "w")
+        let windowMenu = NSMenu(title: i18n("menu.window", "窗口"))
+        let closeItem = NSMenuItem(title: i18n("menu.close", "关闭"), action: #selector(closeMainWindow), keyEquivalent: "w")
         closeItem.keyEquivalentModifierMask = [.command]
         closeItem.target = self
         windowMenu.addItem(closeItem)
@@ -152,7 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         let toggleItem = NSMenuItem(
-            title: settings.isTrackingEnabled ? "关闭轨迹显示" : "开启轨迹显示",
+            title: settings.isTrackingEnabled
+                ? i18n("menu.toggleTrail.on", "关闭轨迹显示")
+                : i18n("menu.toggleTrail.off", "开启轨迹显示"),
             action: #selector(toggleTracking),
             keyEquivalent: ""
         )
@@ -160,16 +171,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(toggleItem)
         toggleMenuItem = toggleItem
 
-        let settingsItem = NSMenuItem(title: "打开设置…", action: #selector(openSettingsWindow), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(
+            title: i18n("menu.openSettings", "打开设置…"),
+            action: #selector(openSettingsWindow),
+            keyEquivalent: ","
+        )
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let clearItem = NSMenuItem(title: "清空当前轨迹", action: #selector(clearTrail), keyEquivalent: "")
+        let clearItem = NSMenuItem(title: i18n("menu.clearTrail", "清空当前轨迹"), action: #selector(clearTrail), keyEquivalent: "")
         clearItem.target = self
         menu.addItem(clearItem)
 
         let hotkeyHintItem = NSMenuItem(
-            title: "快捷键开关：\(hotKeyManager.displayLabel)",
+            title: i18n("menu.hotkeyToggle", "快捷键开关：%@", hotKeyManager.displayLabel),
             action: nil,
             keyEquivalent: ""
         )
@@ -178,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: i18n("menu.quit", "退出"), action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -307,6 +322,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///   - persist: 是否持久化到本地存储。
     ///   - syncWindow: 是否反向同步设置窗口控件显示。
     private func applySettings(persist: Bool, syncWindow: Bool = true) {
+        let languageBefore = LocalizationManager.shared.currentLanguageCode
+        if settings.languageCode != languageBefore {
+            LocalizationManager.shared.setLanguage(code: settings.languageCode)
+            settings.languageCode = LocalizationManager.shared.currentLanguageCode
+        }
+        let languageChanged = lastAppliedLanguageCode != settings.languageCode
+        lastAppliedLanguageCode = settings.languageCode
+
         AppLogger.shared.setEnabled(settings.isLoggingEnabled)
         settings.trailWidth = clampTrailWidth(Double(settings.trailWidth))
         settings.trailLengthMilliseconds = clampTrailLengthMilliseconds(settings.trailLengthMilliseconds)
@@ -344,7 +367,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         syncScrollInterceptionState()
 
-        toggleMenuItem?.title = settings.isTrackingEnabled ? "关闭轨迹显示" : "开启轨迹显示"
+        toggleMenuItem?.title = settings.isTrackingEnabled
+            ? i18n("menu.toggleTrail.on", "关闭轨迹显示")
+            : i18n("menu.toggleTrail.off", "开启轨迹显示")
 
         if persist {
             settingsStore.saveSettings(settings)
@@ -352,6 +377,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if syncWindow {
             settingsWindowController?.updateSettings(settings)
+        }
+        if languageChanged {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshLocalizedInterface()
+            }
         }
     }
 
@@ -456,5 +486,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         settingsWindowController?.window?.performClose(nil)
+    }
+
+    private func refreshLocalizedInterface() {
+        setupKeyboardShortcutMenu()
+        if settings.isStatusItemVisible {
+            removeStatusItem()
+            setupStatusItem()
+        }
+        guard let controller = settingsWindowController else { return }
+        let wasVisible = controller.window?.isVisible ?? false
+        controller.close()
+        settingsWindowController = nil
+        if wasVisible {
+            openSettingsWindow()
+        }
     }
 }

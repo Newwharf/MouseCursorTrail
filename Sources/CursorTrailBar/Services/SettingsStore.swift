@@ -12,6 +12,7 @@ final class SettingsStore {
     private let trackingEnabledKey = "tracking.enabled"
     private let clickEffectsEnabledKey = "click.effects.enabled"
     private let magnifierEnabledKey = "magnifier.enabled"
+    private let languageCodeKey = "app.language.code"
     private let trailColorKey = "trail.color"
     private let trailEffectColorKey = "trail.effect.color"
     private let trailStyleKey = "trail.style"
@@ -66,6 +67,7 @@ final class SettingsStore {
         let isTrackingEnabled = defaults.object(forKey: trackingEnabledKey) as? Bool ?? fallback.isTrackingEnabled
         let isClickEffectsEnabled = defaults.object(forKey: clickEffectsEnabledKey) as? Bool ?? fallback.isClickEffectsEnabled
         let isMagnifierEnabled = defaults.object(forKey: magnifierEnabledKey) as? Bool ?? fallback.isMagnifierEnabled
+        let languageCode = defaults.string(forKey: languageCodeKey) ?? fallback.languageCode
         let trailStyle = defaults
             .string(forKey: trailStyleKey)
             .flatMap(TrailRenderStyle.init(rawValue:))
@@ -188,6 +190,7 @@ final class SettingsStore {
             isTrackingEnabled: isTrackingEnabled,
             isClickEffectsEnabled: isClickEffectsEnabled,
             isMagnifierEnabled: isMagnifierEnabled,
+            languageCode: languageCode,
             trailColor: decodeColor(defaults.data(forKey: trailColorKey)) ?? fallback.trailColor,
             trailEffectColor: decodeColor(defaults.data(forKey: trailEffectColorKey)) ?? fallback.trailEffectColor,
             trailStyle: trailStyle,
@@ -235,6 +238,7 @@ final class SettingsStore {
         defaults.set(settings.isTrackingEnabled, forKey: trackingEnabledKey)
         defaults.set(settings.isClickEffectsEnabled, forKey: clickEffectsEnabledKey)
         defaults.set(settings.isMagnifierEnabled, forKey: magnifierEnabledKey)
+        defaults.set(settings.languageCode, forKey: languageCodeKey)
         defaults.set(Double(settings.trailWidth), forKey: trailWidthKey)
         defaults.set(settings.trailStyle.rawValue, forKey: trailStyleKey)
         defaults.set(settings.trailEffectStyle.rawValue, forKey: trailEffectStyleKey)
