@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 应用启动入口：加载配置、启动监听器并应用初始状态。
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        setupKeyboardShortcutMenu()
         settings = settingsStore.loadSettings()
         seedThunderPresetIfNeeded()
         AppLogger.shared.setEnabled(settings.isLoggingEnabled)
@@ -105,6 +106,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 保持应用常驻，不因关闭最后窗口退出。
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// 注册主菜单快捷键：
+    /// - ⌘W：关闭当前主界面窗口
+    /// - ⌘Q：退出应用
+    private func setupKeyboardShortcutMenu() {
+        let mainMenu = NSMenu()
+
+        let appRootItem = NSMenuItem()
+        let appMenu = NSMenu(title: "CursorTrailBar")
+        let quitItem = NSMenuItem(title: "退出 CursorTrailBar", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.keyEquivalentModifierMask = [.command]
+        quitItem.target = self
+        appMenu.addItem(quitItem)
+        appRootItem.submenu = appMenu
+        mainMenu.addItem(appRootItem)
+
+        let windowRootItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "窗口")
+        let closeItem = NSMenuItem(title: "关闭", action: #selector(closeMainWindow), keyEquivalent: "w")
+        closeItem.keyEquivalentModifierMask = [.command]
+        closeItem.target = self
+        windowMenu.addItem(closeItem)
+        windowRootItem.submenu = windowMenu
+        mainMenu.addItem(windowRootItem)
+
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = windowMenu
     }
 
     private func setupStatusItem() {
@@ -418,5 +447,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc
     private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    @objc
+    private func closeMainWindow() {
+        if let keyWindow = NSApp.keyWindow {
+            keyWindow.performClose(nil)
+            return
+        }
+        settingsWindowController?.window?.performClose(nil)
     }
 }
