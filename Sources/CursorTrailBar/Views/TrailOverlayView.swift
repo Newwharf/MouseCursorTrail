@@ -13,12 +13,30 @@ final class TrailOverlayView: NSView {
     private struct MovePoint {
         let point: NSPoint
         let timestamp: CFTimeInterval
+        let trailScale: CGFloat
     }
 
     private struct TrailSample {
         let point: NSPoint
         let alpha: CGFloat
         let index: Int
+        let trailScale: CGFloat
+    }
+
+    private struct WaterRibbonNode {
+        let point: NSPoint
+        let normal: (x: CGFloat, y: CGFloat)
+        let alpha: CGFloat
+        let progress: CGFloat
+        let curveSign: CGFloat
+        let curveStrength: CGFloat
+        let trailScale: CGFloat
+    }
+
+    private struct ActiveWaterSurge {
+        let endTimestamp: CFTimeInterval
+        let randomTrailScale: CGFloat
+        let randomEffectScale: CGFloat
     }
 
     private struct Pulse {
@@ -60,6 +78,16 @@ final class TrailOverlayView: NSView {
         let timestamp: CFTimeInterval
     }
 
+    private struct WaterImpactDroplet {
+        let point: NSPoint
+        let velocity: CGVector
+        let size: CGFloat
+        let color: NSColor
+        let lifetime: CFTimeInterval
+        let timestamp: CFTimeInterval
+        let seed: Int
+    }
+
     private struct DashBurst {
         let start: NSPoint
         let end: NSPoint
@@ -80,6 +108,7 @@ final class TrailOverlayView: NSView {
     private var pulses: [Pulse] = []
     private var particles: [Particle] = []
     private var clickAccents: [ClickAccent] = []
+    private var waterImpactDroplets: [WaterImpactDroplet] = []
     private var dashBursts: [DashBurst] = []
     private var cursorPoint: NSPoint?
     private var lastMovePoint: NSPoint?
@@ -98,11 +127,28 @@ final class TrailOverlayView: NSView {
     private var rainbowTrailColors: [NSColor] = AppSettings.default.rainbowTrailColors
     private var neonPrimaryColor: NSColor = AppSettings.default.neonPrimaryColor
     private var neonSecondaryColor: NSColor = AppSettings.default.neonSecondaryColor
+    private var waterHighlightColor: NSColor = AppSettings.default.waterHighlightColor
+    private var waterPrimaryColor: NSColor = AppSettings.default.waterPrimaryColor
+    private var waterShadowColor: NSColor = AppSettings.default.waterShadowColor
+    private var waterHighlightRatio: CGFloat = AppSettings.default.waterHighlightRatio
+    private var waterPrimaryRatio: CGFloat = AppSettings.default.waterPrimaryRatio
+    private var waterShadowRatio: CGFloat = AppSettings.default.waterShadowRatio
+    private var waterMixRandomness: CGFloat = AppSettings.default.waterMixRandomness
+    private var waterMixSeedLocked: Bool = AppSettings.default.waterMixSeedLocked
+    private var waterSplashSize: CGFloat = AppSettings.default.waterSplashSize
+    private var waterSplashSpeed: CGFloat = AppSettings.default.waterSplashSpeed
+    private var waterSplashLifetimeSeconds: CFTimeInterval = AppSettings.default.waterSplashLifetimeMilliseconds / 1000
+    private var waterSplashDensity: CGFloat = AppSettings.default.waterSplashDensity
+    private var waterSplashColor: NSColor = AppSettings.default.waterSplashColor
     private var trailLineWidth: CGFloat = AppSettings.default.trailWidth
     private var trailLengthMilliseconds: Double = AppSettings.default.trailLengthMilliseconds
     private var clickVisualStyle: ClickVisualStyle = AppSettings.default.clickVisualStyle
     private var clickEffectRadius: CGFloat = AppSettings.default.clickEffectRadius
     private var clickEffectDurationSeconds: CFTimeInterval = AppSettings.default.clickEffectDurationMilliseconds / 1000
+    private var waterImpactDropletDensity: CGFloat = AppSettings.default.waterImpactDropletDensity
+    private var waterImpactSpreadSpeed: CGFloat = AppSettings.default.waterImpactSpreadSpeed
+    private var waterImpactLifetimeSeconds: CFTimeInterval = AppSettings.default.waterImpactLifetimeMilliseconds / 1000
+    private var waterImpactDropletSize: CGFloat = AppSettings.default.waterImpactDropletSize
     private var magnifierRadius: CGFloat = AppSettings.default.magnifierRadius
     private var magnifierZoom: CGFloat = AppSettings.default.magnifierZoom
     private var configuredMagnifierZoom: CGFloat = AppSettings.default.magnifierZoom
@@ -112,28 +158,75 @@ final class TrailOverlayView: NSView {
     private var showTrailEffectsWhileMagnifierActive = AppSettings.default.showTrailEffectsWhileMagnifierActive
     private var isClickEffectsEnabled = AppSettings.default.isClickEffectsEnabled
     private var isMagnifierEnabled = AppSettings.default.isMagnifierEnabled
+    private var isTrailEffectsEnabled = AppSettings.default.isTrailEffectsEnabled
+    private var trailEffectIntensity = AppSettings.default.trailEffectIntensity
     private var isMagnifierActive = false
-    private var intensityPreset: EffectIntensityPreset = AppSettings.default.intensityPreset
     private var speedBurstEnabled = AppSettings.default.speedBurstEnabled
     private var speedBurstType: SpeedBurstEffectType = AppSettings.default.speedBurstType
     private var speedBurstVelocityThreshold: CGFloat = AppSettings.default.speedBurstVelocityThreshold
     private var speedBurstCooldownSeconds: CFTimeInterval = AppSettings.default.speedBurstCooldownMilliseconds / 1000
     private var speedBurstDurationSeconds: CFTimeInterval = AppSettings.default.speedBurstDurationMilliseconds / 1000
+    private var speedBurstDurationMinSeconds: CFTimeInterval = AppSettings.default.speedBurstDurationMinMilliseconds / 1000
+    private var speedBurstDurationMaxSeconds: CFTimeInterval = AppSettings.default.speedBurstDurationMaxMilliseconds / 1000
     private var speedBurstJitterAmplitude: CGFloat = AppSettings.default.speedBurstJitterAmplitude
     private var speedBurstMinLength: CGFloat = AppSettings.default.speedBurstMinLength
     private var speedBurstMaxLength: CGFloat = AppSettings.default.speedBurstMaxLength
     private var speedBurstWidthMultiplier: CGFloat = AppSettings.default.speedBurstWidthMultiplier
+    private var speedBurstTrailMinScale: CGFloat = AppSettings.default.speedBurstTrailMinScale
+    private var speedBurstTrailMaxScale: CGFloat = AppSettings.default.speedBurstTrailMaxScale
+    private var speedBurstEffectMinScale: CGFloat = AppSettings.default.speedBurstEffectMinScale
+    private var speedBurstEffectMaxScale: CGFloat = AppSettings.default.speedBurstEffectMaxScale
+    private var speedSurgeScaleMode: SpeedSurgeScaleMode = AppSettings.default.speedSurgeScaleMode
     private var speedBurstLineColor: NSColor = AppSettings.default.speedBurstLineColor
     private var speedBurstAccentColor: NSColor = AppSettings.default.speedBurstAccentColor
     private var speedBurstAccentDurationSeconds: CFTimeInterval = AppSettings.default.speedBurstAccentDurationMilliseconds / 1000
     private var speedBurstAccentSize: CGFloat = AppSettings.default.speedBurstAccentSize
     private var clickEffects: [MouseButtonKind: ClickEffectStyle] = AppSettings.default.clickEffects
+    private var activeWaterSurge: ActiveWaterSurge?
     private var hadAnimatedContentOnLastTick = false
     private var lastMagnifierZoomLogTimestamp: CFTimeInterval = 0
     private var lastMagnifierCenterLogTimestamp: CFTimeInterval = 0
 
     private var trailLengthSeconds: CFTimeInterval {
         trailLengthMilliseconds / 1000
+    }
+
+    private var normalizedTrailEffectIntensity: CGFloat {
+        max(0, min(1, trailEffectIntensity / 100))
+    }
+
+    private var effectSpawnMultiplier: CGFloat {
+        guard isTrailEffectsEnabled else { return 0 }
+        return 0.35 + normalizedTrailEffectIntensity * 1.75
+    }
+
+    private var effectParticleLifetime: CFTimeInterval {
+        guard isTrailEffectsEnabled else { return 0.01 }
+        return CFTimeInterval(0.24 + normalizedTrailEffectIntensity * 0.58)
+    }
+
+    private var effectParticleSizeRange: ClosedRange<CGFloat> {
+        guard isTrailEffectsEnabled else { return 0.1...0.1 }
+        let minSize = 1.0 + normalizedTrailEffectIntensity * 1.8
+        let maxSize = 2.0 + normalizedTrailEffectIntensity * 3.6
+        return minSize...maxSize
+    }
+
+    private var effectParticleSpeedRange: ClosedRange<CGFloat> {
+        guard isTrailEffectsEnabled else { return 0...0 }
+        let minSpeed = 10 + normalizedTrailEffectIntensity * 35
+        let maxSpeed = 28 + normalizedTrailEffectIntensity * 70
+        return minSpeed...maxSpeed
+    }
+
+    private var effectMaxParticleCount: Int {
+        guard isTrailEffectsEnabled else { return 0 }
+        return max(40, Int(90 + normalizedTrailEffectIntensity * 420))
+    }
+
+    private var effectGlowBoost: CGFloat {
+        guard isTrailEffectsEnabled else { return 0 }
+        return 0.55 + normalizedTrailEffectIntensity * 1.0
     }
 
     private let minimumMoveSampleInterval: CFTimeInterval = 1.0 / 120.0
@@ -163,6 +256,7 @@ final class TrailOverlayView: NSView {
             dashBursts.removeAll()
             lastMoveTimestamp = nil
             lastDashBurstTimestamp = -1
+            activeWaterSurge = nil
             needsDisplay = true
         }
     }
@@ -172,12 +266,14 @@ final class TrailOverlayView: NSView {
         pulses.removeAll()
         particles.removeAll()
         clickAccents.removeAll()
+        waterImpactDroplets.removeAll()
         dashBursts.removeAll()
         cursorPoint = nil
         lastMovePoint = nil
         lastMoveTimestamp = nil
         lastAcceptedMoveTimestamp = 0
         lastDashBurstTimestamp = -1
+        activeWaterSurge = nil
         pressedButton = .none
         cachedMagnifierImage = nil
         hadAnimatedContentOnLastTick = false
@@ -192,11 +288,28 @@ final class TrailOverlayView: NSView {
         rainbowTrailColors = settings.rainbowTrailColors
         neonPrimaryColor = settings.neonPrimaryColor
         neonSecondaryColor = settings.neonSecondaryColor
+        waterHighlightColor = settings.waterHighlightColor
+        waterPrimaryColor = settings.waterPrimaryColor
+        waterShadowColor = settings.waterShadowColor
+        waterHighlightRatio = settings.waterHighlightRatio
+        waterPrimaryRatio = settings.waterPrimaryRatio
+        waterShadowRatio = settings.waterShadowRatio
+        waterMixRandomness = settings.waterMixRandomness
+        waterMixSeedLocked = settings.waterMixSeedLocked
+        waterSplashSize = settings.waterSplashSize
+        waterSplashSpeed = settings.waterSplashSpeed
+        waterSplashLifetimeSeconds = settings.waterSplashLifetimeMilliseconds / 1000
+        waterSplashDensity = settings.waterSplashDensity
+        waterSplashColor = settings.waterSplashColor
         trailLineWidth = settings.trailWidth
         trailLengthMilliseconds = settings.trailLengthMilliseconds
         clickVisualStyle = settings.clickVisualStyle
         clickEffectRadius = settings.clickEffectRadius
         clickEffectDurationSeconds = settings.clickEffectDurationMilliseconds / 1000
+        waterImpactDropletDensity = settings.waterImpactDropletDensity
+        waterImpactSpreadSpeed = settings.waterImpactSpreadSpeed
+        waterImpactLifetimeSeconds = settings.waterImpactLifetimeMilliseconds / 1000
+        waterImpactDropletSize = settings.waterImpactDropletSize
         magnifierRadius = settings.magnifierRadius
         configuredMagnifierZoom = settings.magnifierZoom
         if !isMagnifierActive {
@@ -208,20 +321,34 @@ final class TrailOverlayView: NSView {
         showTrailEffectsWhileMagnifierActive = settings.showTrailEffectsWhileMagnifierActive
         isClickEffectsEnabled = settings.isClickEffectsEnabled
         isMagnifierEnabled = settings.isMagnifierEnabled
-        intensityPreset = settings.intensityPreset
+        isTrailEffectsEnabled = settings.isTrailEffectsEnabled
+        trailEffectIntensity = settings.trailEffectIntensity
         speedBurstEnabled = settings.speedBurstEnabled
         speedBurstType = settings.speedBurstType
         speedBurstVelocityThreshold = settings.speedBurstVelocityThreshold
         speedBurstCooldownSeconds = settings.speedBurstCooldownMilliseconds / 1000
         speedBurstDurationSeconds = settings.speedBurstDurationMilliseconds / 1000
+        speedBurstDurationMinSeconds = settings.speedBurstDurationMinMilliseconds / 1000
+        speedBurstDurationMaxSeconds = max(
+            settings.speedBurstDurationMinMilliseconds,
+            settings.speedBurstDurationMaxMilliseconds
+        ) / 1000
         speedBurstJitterAmplitude = settings.speedBurstJitterAmplitude
         speedBurstMinLength = settings.speedBurstMinLength
         speedBurstMaxLength = max(settings.speedBurstMinLength, settings.speedBurstMaxLength)
         speedBurstWidthMultiplier = settings.speedBurstWidthMultiplier
+        speedBurstTrailMinScale = settings.speedBurstTrailMinScale
+        speedBurstTrailMaxScale = max(settings.speedBurstTrailMinScale, settings.speedBurstTrailMaxScale)
+        speedBurstEffectMinScale = settings.speedBurstEffectMinScale
+        speedBurstEffectMaxScale = max(settings.speedBurstEffectMinScale, settings.speedBurstEffectMaxScale)
+        speedSurgeScaleMode = settings.speedSurgeScaleMode
         speedBurstLineColor = settings.speedBurstLineColor
         speedBurstAccentColor = settings.speedBurstAccentColor
         speedBurstAccentDurationSeconds = settings.speedBurstAccentDurationMilliseconds / 1000
         speedBurstAccentSize = settings.speedBurstAccentSize
+        if !speedBurstEnabled || speedBurstType != .waterSurge {
+            activeWaterSurge = nil
+        }
         clickEffects = settings.clickEffects
         if !isMagnifierEnabled {
             isMagnifierActive = false
@@ -245,6 +372,7 @@ final class TrailOverlayView: NSView {
             pulses.removeAll()
             particles.removeAll()
             clickAccents.removeAll()
+            waterImpactDroplets.removeAll()
             pressedButton = .none
         }
         needsDisplay = true
@@ -301,12 +429,18 @@ final class TrailOverlayView: NSView {
             if interval < minimumMoveSampleInterval, distance < minimumMoveDistance {
                 return
             }
+            let surgeScale = currentWaterSurgeScales(at: signal.timestamp, velocity: velocity)
             lastAcceptedMoveTimestamp = signal.timestamp
-            movePoints.append(MovePoint(point: localPoint, timestamp: signal.timestamp))
+            movePoints.append(MovePoint(point: localPoint, timestamp: signal.timestamp, trailScale: surgeScale.trail))
             if movePoints.count > maxMoveCount {
                 movePoints.removeFirst(movePoints.count - maxMoveCount)
             }
-            emitTrailEffects(from: lastMovePoint ?? localPoint, to: localPoint, timestamp: signal.timestamp)
+            emitTrailEffects(
+                from: lastMovePoint ?? localPoint,
+                to: localPoint,
+                timestamp: signal.timestamp,
+                effectScale: surgeScale.effect
+            )
             emitThunderDashIfNeeded(from: previous, to: localPoint, velocity: velocity, timestamp: signal.timestamp)
             lastMovePoint = localPoint
             lastMoveTimestamp = signal.timestamp
@@ -366,12 +500,15 @@ final class TrailOverlayView: NSView {
             drawMoveTrail(now: now)
             drawDashBursts(now: now)
         }
-        if canRenderOverlays && intensityPreset.effectsEnabled {
+        if canRenderOverlays && isTrailEffectsEnabled {
             drawParticles(now: now)
         }
         if canRenderOverlays && isClickEffectsEnabled {
             drawPulses(now: now)
             drawPressedState()
+        }
+        if canRenderOverlays {
+            drawWaterImpactDroplets(now: now)
         }
         if canRenderOverlays {
             drawClickAccents(now: now)
@@ -392,13 +529,19 @@ final class TrailOverlayView: NSView {
             drawRibbonLikeTrail(samples: samples, now: now, style: .rainbow)
         case .lightning:
             drawLightningTrail(samples: samples, now: now)
+        case .waterBlade:
+            drawWaterBladeTrail(samples: samples, now: now)
         }
-        if trailEffectStyle == .electric, intensityPreset.effectsEnabled {
+        if trailEffectStyle == .electric, isTrailEffectsEnabled {
             drawElectricTrailCoverage(samples: samples, now: now)
         }
     }
 
-    private func drawRibbonLikeTrail(samples: [TrailSample], now: CFTimeInterval, style: TrailRenderStyle) {
+    private func drawRibbonLikeTrail(
+        samples: [TrailSample],
+        now: CFTimeInterval,
+        style: TrailRenderStyle
+    ) {
         guard samples.count > 3 else { return }
 
         let total = max(1, samples.count - 1)
@@ -420,7 +563,7 @@ final class TrailOverlayView: NSView {
             if baseAlpha <= 0.001 { continue }
 
             let progress = CGFloat(index) / CGFloat(total)
-            let width: CGFloat = switch style {
+            let baseWidth: CGFloat = switch style {
             case .ribbon:
                 max(0.42, trailLineWidth * (0.14 + 1.04 * pow(progress, 0.82)))
             case .neon:
@@ -429,7 +572,11 @@ final class TrailOverlayView: NSView {
                 max(0.44, trailLineWidth * (0.16 + 1.1 * pow(progress, 0.82)))
             case .lightning:
                 max(0.4, trailLineWidth * (0.12 + 1.0 * pow(progress, 0.8)))
+            case .waterBlade:
+                max(0.44, trailLineWidth * (0.15 + 1.06 * pow(progress, 0.82)))
             }
+            let segmentScale = max(0.1, (previous.trailScale + current.trailScale + next.trailScale) / 3.0)
+            let width: CGFloat = baseWidth * segmentScale
             let segmentAlpha = baseAlpha * (0.06 + 0.94 * progress)
 
             let curve = NSBezierPath()
@@ -451,6 +598,8 @@ final class TrailOverlayView: NSView {
                 rainbowColor(for: current.index, now: now)
             case .lightning:
                 trailColor
+            case .waterBlade:
+                trailColor
             }
             glowColor.withAlphaComponent((style == .neon ? 0.16 : 0.08) * segmentAlpha).setStroke()
             glow.stroke()
@@ -466,6 +615,8 @@ final class TrailOverlayView: NSView {
                 (rainbowBaseColor?.blended(withFraction: 0.08, of: .white)) ?? (rainbowBaseColor ?? trailColor)
             case .lightning:
                 trailColor
+            case .waterBlade:
+                trailColor
             }
             let coreAlpha: CGFloat = switch style {
             case .ribbon:
@@ -476,6 +627,8 @@ final class TrailOverlayView: NSView {
                 0.82 * segmentAlpha
             case .lightning:
                 0.78 * segmentAlpha
+            case .waterBlade:
+                0.8 * segmentAlpha
             }
             coreColor.withAlphaComponent(coreAlpha).setStroke()
             curve.stroke()
@@ -490,7 +643,7 @@ final class TrailOverlayView: NSView {
         }
     }
 
-    private func drawLightningTrail(samples: [TrailSample], now: CFTimeInterval) {
+    private func drawLightningTrail(samples: [TrailSample], now _: CFTimeInterval) {
         guard samples.count > 1 else { return }
         for index in 1..<samples.count {
             let first = samples[index - 1]
@@ -502,7 +655,8 @@ final class TrailOverlayView: NSView {
             guard distance >= 0.2 else { continue }
 
             let progress = CGFloat(index) / CGFloat(max(1, samples.count - 1))
-            let lineWidth = max(0.6, trailLineWidth * (0.22 + 0.88 * pow(progress, 0.8)) * 0.92)
+            let segmentScale = max(0.1, (first.trailScale + second.trailScale) * 0.5)
+            let lineWidth = max(0.6, trailLineWidth * (0.22 + 0.88 * pow(progress, 0.8)) * 0.92 * segmentScale)
 
             let lightningPath = makeLightningPath(from: first.point, to: second.point)
             lightningPath.lineWidth = lineWidth
@@ -520,10 +674,158 @@ final class TrailOverlayView: NSView {
         }
     }
 
+    private func drawWaterBladeTrail(samples: [TrailSample], now: CFTimeInterval) {
+        let nodes = makeWaterRibbonNodes(samples: samples)
+        guard nodes.count > 3 else { return }
+        let ratios = normalizedWaterRatios()
+        let randomness = max(0, min(1, waterMixRandomness / 100))
+        let phaseSeed = waterMixSeedLocked ? 0 : Int(now * 24)
+        let baseMixedColor = weightedWaterColor(
+            highlightWeight: ratios.highlight,
+            primaryWeight: ratios.primary,
+            shadowWeight: ratios.shadow
+        )
+        let bandSpan = max(3, Int(round(12 - randomness * 8)))
+
+        for index in 1..<nodes.count {
+            let previous = nodes[index - 1]
+            let current = nodes[index]
+            let alpha = min(previous.alpha, current.alpha)
+            if alpha < 0.01 { continue }
+            let progress = current.progress
+            let segmentAlpha = alpha * (0.1 + 0.9 * progress)
+            let taper = 0.2 + 0.8 * pow(max(0.001, progress), 0.72)
+            let curveBoost = 1 + current.curveStrength * 0.52
+            let segmentScale = max(0.1, (previous.trailScale + current.trailScale) * 0.5)
+            let baseHalfWidth = max(0.85, trailLineWidth * (0.34 + 2.18 * taper) * curveBoost * segmentScale)
+            let waveOffsetStart = waterWaveOffset(
+                index: index - 1,
+                progress: previous.progress,
+                randomness: randomness,
+                phaseSeed: phaseSeed,
+                trailScale: previous.trailScale
+            )
+            let waveOffsetEnd = waterWaveOffset(
+                index: index,
+                progress: current.progress,
+                randomness: randomness,
+                phaseSeed: phaseSeed,
+                trailScale: current.trailScale
+            )
+            let startPoint = offset(previous.point, by: previous.normal, amount: waveOffsetStart)
+            let endPoint = offset(current.point, by: current.normal, amount: waveOffsetEnd)
+
+            let paletteColor = waterBladeSegmentColor(
+                sampleIndex: index / bandSpan,
+                phaseSeed: phaseSeed,
+                baseColor: baseMixedColor,
+                highlightWeight: ratios.highlight,
+                primaryWeight: ratios.primary,
+                randomness: randomness
+            )
+            let shadowColor = waterShadowColor.blended(withFraction: 0.22 + randomness * 0.3, of: paletteColor) ?? waterShadowColor
+            let primaryColor = waterPrimaryColor.blended(withFraction: 0.3 + randomness * 0.5, of: paletteColor) ?? waterPrimaryColor
+            let highlightColor = waterHighlightColor.blended(
+                withFraction: 0.24 + randomness * 0.36,
+                of: paletteColor.blended(withFraction: 0.22, of: .white) ?? paletteColor
+            ) ?? waterHighlightColor
+            let glowColor = (primaryColor.blended(withFraction: 0.42, of: .white) ?? primaryColor)
+
+            let shadowHalfWidthStart = baseHalfWidth * (0.86 + ratios.shadow * 0.72)
+            let shadowHalfWidthEnd = shadowHalfWidthStart * (0.95 + current.curveStrength * 0.1)
+            let primaryHalfWidthStart = baseHalfWidth * (0.56 + ratios.primary * 0.64)
+            let primaryHalfWidthEnd = primaryHalfWidthStart * (0.94 + current.curveStrength * 0.08)
+            let highlightHalfWidthStart = baseHalfWidth * (0.28 + ratios.highlight * 0.54)
+            let highlightHalfWidthEnd = highlightHalfWidthStart * (0.92 + current.curveStrength * 0.08)
+
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: 0,
+                centerOffsetEnd: 0,
+                halfWidthStart: shadowHalfWidthStart * 1.35,
+                halfWidthEnd: shadowHalfWidthEnd * 1.35,
+                color: glowColor,
+                alpha: 0.09 * segmentAlpha * effectGlowBoost
+            )
+
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: 0,
+                centerOffsetEnd: 0,
+                halfWidthStart: shadowHalfWidthStart,
+                halfWidthEnd: shadowHalfWidthEnd,
+                color: shadowColor,
+                alpha: 0.48 * segmentAlpha
+            )
+
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: 0,
+                centerOffsetEnd: 0,
+                halfWidthStart: primaryHalfWidthStart,
+                halfWidthEnd: primaryHalfWidthEnd,
+                color: primaryColor,
+                alpha: 0.85 * segmentAlpha
+            )
+
+            let highlightOffset = current.curveSign * baseHalfWidth * (0.18 + current.curveStrength * 0.36)
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: highlightOffset * 0.86,
+                centerOffsetEnd: highlightOffset,
+                halfWidthStart: highlightHalfWidthStart,
+                halfWidthEnd: highlightHalfWidthEnd,
+                color: highlightColor,
+                alpha: 0.9 * segmentAlpha
+            )
+
+            let sideBandHalfWidth = max(0.36, baseHalfWidth * (0.08 + randomness * 0.1))
+            let sideBandOffset = baseHalfWidth * (0.82 + randomness * 0.14)
+            let sideBandColorA = primaryColor.blended(withFraction: 0.58, of: waterHighlightColor) ?? primaryColor
+            let sideBandColorB = primaryColor.blended(withFraction: 0.36, of: waterShadowColor) ?? primaryColor
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: sideBandOffset,
+                centerOffsetEnd: sideBandOffset * 0.96,
+                halfWidthStart: sideBandHalfWidth,
+                halfWidthEnd: sideBandHalfWidth * 0.92,
+                color: sideBandColorA,
+                alpha: 0.36 * segmentAlpha
+            )
+            drawWaterRibbonQuad(
+                start: startPoint,
+                end: endPoint,
+                startNormal: previous.normal,
+                endNormal: current.normal,
+                centerOffsetStart: -sideBandOffset,
+                centerOffsetEnd: -sideBandOffset * 0.96,
+                halfWidthStart: sideBandHalfWidth,
+                halfWidthEnd: sideBandHalfWidth * 0.92,
+                color: sideBandColorB,
+                alpha: 0.31 * segmentAlpha
+            )
+        }
+    }
+
     private func drawElectricTrailCoverage(samples: [TrailSample], now: CFTimeInterval) {
         guard samples.count > 6 else { return }
 
-        let coverageFactor = max(0.5, intensityPreset.particleSpawnMultiplier)
+        let coverageFactor = max(0.5, effectSpawnMultiplier)
         let targetArcCount = max(10, min(110, Int(CGFloat(samples.count) * 0.18 * coverageFactor)))
         let strideStep = max(1, samples.count / max(1, targetArcCount))
         let phase = Int(now * 36)
@@ -581,7 +883,7 @@ final class TrailOverlayView: NSView {
             let color = trailEffectColor.blended(withFraction: 0.56, of: .white) ?? trailEffectColor
             let glow = arc.copy() as! NSBezierPath
             glow.lineWidth = arc.lineWidth * 2.1
-            color.withAlphaComponent(0.14 * alpha * intensityPreset.glowBoost).setStroke()
+            color.withAlphaComponent(0.14 * alpha * effectGlowBoost).setStroke()
             glow.stroke()
 
             color.withAlphaComponent(0.78 * alpha).setStroke()
@@ -606,7 +908,7 @@ final class TrailOverlayView: NSView {
             glowPath.lineWidth = burst.lineWidth * 2.1
             glowPath.lineCapStyle = .round
             glowPath.lineJoinStyle = .round
-            burst.coreColor.withAlphaComponent(0.22 * alpha * intensityPreset.glowBoost).setStroke()
+            burst.coreColor.withAlphaComponent(0.22 * alpha * effectGlowBoost).setStroke()
             glowPath.stroke()
 
             let corePath = makeThunderDashPath(
@@ -641,29 +943,64 @@ final class TrailOverlayView: NSView {
         return path
     }
 
-    private func thunderDashVelocityThreshold(for preset: EffectIntensityPreset) -> CGFloat {
-        switch preset {
-        case .off:
-            return .greatestFiniteMagnitude
-        case .low:
-            return speedBurstVelocityThreshold * 1.2
-        case .normal:
-            return speedBurstVelocityThreshold
-        case .high:
-            return speedBurstVelocityThreshold * 0.9
-        }
+    private func thunderDashVelocityThreshold() -> CGFloat {
+        guard isTrailEffectsEnabled else { return .greatestFiniteMagnitude }
+        let norm = normalizedTrailEffectIntensity
+        let factor = 1.2 - norm * 0.3
+        return speedBurstVelocityThreshold * factor
     }
 
-    /// 按速度阈值触发“一之闪”爆发线与端点爆发。
+    private func currentWaterSurgeScales(
+        at timestamp: CFTimeInterval,
+        velocity: CGFloat
+    ) -> (trail: CGFloat, effect: CGFloat) {
+        guard speedBurstEnabled else { return (1, 1) }
+        guard speedBurstType == .waterSurge else { return (1, 1) }
+        guard let surge = activeWaterSurge else { return (1, 1) }
+        if timestamp >= surge.endTimestamp {
+            activeWaterSurge = nil
+            return (1, 1)
+        }
+
+        let trailScale: CGFloat
+        let effectScale: CGFloat
+        switch speedSurgeScaleMode {
+        case .randomRange:
+            trailScale = surge.randomTrailScale
+            effectScale = surge.randomEffectScale
+        case .velocityBased:
+            let minVelocity = max(1, thunderDashVelocityThreshold())
+            let maxVelocity = max(minVelocity + 1, speedBurstVelocityThreshold * 3.2)
+            let normalizedVelocity = max(0, min(1, (velocity - minVelocity) / (maxVelocity - minVelocity)))
+            let easedVelocity = pow(normalizedVelocity, 0.72)
+            trailScale = speedBurstTrailMinScale + (speedBurstTrailMaxScale - speedBurstTrailMinScale) * easedVelocity
+            effectScale = speedBurstEffectMinScale + (speedBurstEffectMaxScale - speedBurstEffectMinScale) * easedVelocity
+        }
+
+        return (
+            max(0.1, min(speedBurstTrailMaxScale, trailScale)),
+            max(0.1, min(speedBurstEffectMaxScale, effectScale))
+        )
+    }
+
+    /// 按速度阈值触发加速爆发。
     /// - Important: 受 `speedBurstEnabled`、冷却时间与强度预设共同约束。
     private func emitThunderDashIfNeeded(from start: NSPoint, to end: NSPoint, velocity: CGFloat, timestamp: CFTimeInterval) {
         guard isTrailEnabled else { return }
         guard speedBurstEnabled else { return }
-        guard intensityPreset.effectsEnabled else { return }
-        guard speedBurstType == .firstFlash else { return }
-        guard velocity >= thunderDashVelocityThreshold(for: intensityPreset) else { return }
+        guard isTrailEffectsEnabled else { return }
+        guard velocity >= thunderDashVelocityThreshold() else { return }
         guard timestamp - lastDashBurstTimestamp >= speedBurstCooldownSeconds else { return }
 
+        switch speedBurstType {
+        case .firstFlash:
+            emitFirstFlashBurst(from: start, to: end, velocity: velocity, timestamp: timestamp)
+        case .waterSurge:
+            activateWaterSurge(at: end, velocity: velocity, timestamp: timestamp)
+        }
+    }
+
+    private func emitFirstFlashBurst(from start: NSPoint, to end: NSPoint, velocity: CGFloat, timestamp: CFTimeInterval) {
         let dx = end.x - start.x
         let dy = end.y - start.y
         let distance = hypot(dx, dy)
@@ -717,6 +1054,42 @@ final class TrailOverlayView: NSView {
         AppLogger.shared.log("thunder dash burst emitted: velocity=\(Int(velocity)) px/s")
     }
 
+    private func activateWaterSurge(at point: NSPoint, velocity: CGFloat, timestamp: CFTimeInterval) {
+        lastDashBurstTimestamp = timestamp
+        let minDuration = max(0.04, min(speedBurstDurationMinSeconds, speedBurstDurationMaxSeconds))
+        let maxDuration = max(minDuration, speedBurstDurationMaxSeconds)
+        let duration = CFTimeInterval.random(in: minDuration...maxDuration)
+        let randomTrailScale = CGFloat.random(in: speedBurstTrailMinScale...max(speedBurstTrailMinScale, speedBurstTrailMaxScale))
+        let randomEffectScale = CGFloat.random(in: speedBurstEffectMinScale...max(speedBurstEffectMinScale, speedBurstEffectMaxScale))
+        activeWaterSurge = ActiveWaterSurge(
+            endTimestamp: timestamp + duration,
+            randomTrailScale: randomTrailScale,
+            randomEffectScale: randomEffectScale
+        )
+
+        let currentScale = switch speedSurgeScaleMode {
+        case .randomRange:
+            max(randomTrailScale, randomEffectScale)
+        case .velocityBased:
+            max(speedBurstTrailMaxScale, speedBurstEffectMaxScale)
+        }
+        let accentLifetime = min(max(0.08, duration * 0.52), 0.45)
+        addPulse(
+            at: point,
+            color: speedBurstAccentColor.blended(withFraction: 0.22, of: waterSplashColor) ?? speedBurstAccentColor,
+            filled: false,
+            kind: .circle,
+            startRadius: max(4, trailLineWidth * 0.58),
+            endRadius: max(10, trailLineWidth * (2.2 + currentScale * 1.1)),
+            lineWidth: max(1.2, trailLineWidth * 0.46),
+            lifetime: accentLifetime,
+            timestamp: timestamp
+        )
+        AppLogger.shared.log(
+            "water surge activated: mode=\(speedSurgeScaleMode.rawValue), velocity=\(Int(velocity)) px/s, duration=\(Int(duration * 1000)) ms, scale=\(rounded(Double(currentScale)))x"
+        )
+    }
+
     private func emitThunderDashParticles(
         start: NSPoint,
         end: NSPoint,
@@ -728,7 +1101,7 @@ final class TrailOverlayView: NSView {
         let distance = max(0.001, hypot(dx, dy))
         let directionX = dx / distance
         let directionY = dy / distance
-        let burstCount = max(16, min(44, Int(24 * intensityPreset.particleSpawnMultiplier)))
+        let burstCount = max(16, min(44, Int(24 * effectSpawnMultiplier)))
         for index in 0..<burstCount {
             let interpolation = CGFloat(index) / CGFloat(max(1, burstCount - 1))
             let jitter = CGFloat.random(in: -6...6)
@@ -739,7 +1112,7 @@ final class TrailOverlayView: NSView {
             let spread = CGFloat.random(in: -0.75...0.75)
             let rotatedX = directionX * cos(spread) - directionY * sin(spread)
             let rotatedY = directionX * sin(spread) + directionY * cos(spread)
-            let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound * 1.3 ... intensityPreset.particleSpeedRange.upperBound * 2.4)
+            let speed = CGFloat.random(in: effectParticleSpeedRange.upperBound * 1.3 ... effectParticleSpeedRange.upperBound * 2.4)
             let colorPick = CGFloat.random(in: 0...1)
             let color: NSColor
             if colorPick < 0.72 {
@@ -789,7 +1162,8 @@ final class TrailOverlayView: NSView {
                     y: first.point.y + dy * fraction
                 )
                 let alpha = max(0, 1 - CGFloat(age / lifetime))
-                samples.append(TrailSample(point: point, alpha: alpha, index: sampleIndex))
+                let trailScale = first.trailScale + (second.trailScale - first.trailScale) * fraction
+                samples.append(TrailSample(point: point, alpha: alpha, index: sampleIndex, trailScale: trailScale))
                 sampleIndex += 1
             }
         }
@@ -821,7 +1195,7 @@ final class TrailOverlayView: NSView {
                 if pulse.filled {
                     let gradient = NSGradient(
                         colors: [
-                            pulse.color.withAlphaComponent(0.35 * alpha * intensityPreset.glowBoost),
+                            pulse.color.withAlphaComponent(0.35 * alpha * effectGlowBoost),
                             pulse.color.withAlphaComponent(0.06 * alpha),
                             .clear,
                         ]
@@ -842,7 +1216,7 @@ final class TrailOverlayView: NSView {
                     path.stroke()
                     let gradient = NSGradient(
                         colors: [
-                            pulse.color.withAlphaComponent(0.28 * alpha * intensityPreset.glowBoost),
+                            pulse.color.withAlphaComponent(0.28 * alpha * effectGlowBoost),
                             pulse.color.withAlphaComponent(0.05 * alpha),
                             .clear,
                         ]
@@ -878,17 +1252,34 @@ final class TrailOverlayView: NSView {
             let y = particle.point.y + particle.velocity.dy * CGFloat(age)
             switch trailEffectStyle {
             case .particles:
-                let radius = particle.size * (1 + progress * 0.45)
-                let rect = NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
-                let path = NSBezierPath(ovalIn: rect)
-                let gradient = NSGradient(
-                    colors: [
-                        particle.color.withAlphaComponent(0.48 * alpha),
-                        particle.color.withAlphaComponent(0.16 * alpha),
-                        .clear,
-                    ]
-                )
-                gradient?.draw(in: path, relativeCenterPosition: .zero)
+                if trailStyle == .waterBlade {
+                    let length = particle.size * (2.2 + progress * 2.6)
+                    let velocityLength = max(0.0001, hypot(particle.velocity.dx, particle.velocity.dy))
+                    let dirX = particle.velocity.dx / velocityLength
+                    let dirY = particle.velocity.dy / velocityLength
+                    let start = NSPoint(x: x - dirX * length * 0.4, y: y - dirY * length * 0.4)
+                    let end = NSPoint(x: x + dirX * length * 0.6, y: y + dirY * length * 0.6)
+                    let streak = NSBezierPath()
+                    streak.move(to: start)
+                    streak.line(to: end)
+                    streak.lineWidth = max(0.7, particle.size * 0.7)
+                    streak.lineCapStyle = .round
+                    let streakColor = particle.color.blended(withFraction: 0.38, of: .white) ?? particle.color
+                    streakColor.withAlphaComponent(0.66 * alpha).setStroke()
+                    streak.stroke()
+                } else {
+                    let radius = particle.size * (1 + progress * 0.45)
+                    let rect = NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                    let path = NSBezierPath(ovalIn: rect)
+                    let gradient = NSGradient(
+                        colors: [
+                            particle.color.withAlphaComponent(0.48 * alpha),
+                            particle.color.withAlphaComponent(0.16 * alpha),
+                            .clear,
+                        ]
+                    )
+                    gradient?.draw(in: path, relativeCenterPosition: .zero)
+                }
             case .ink:
                 let radius = particle.size * (1.2 + progress * 0.25)
                 let rect = NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
@@ -907,6 +1298,29 @@ final class TrailOverlayView: NSView {
                     .withAlphaComponent(0.9 * alpha)
                     .setStroke()
                 spark.stroke()
+            case .waterSplash:
+                let velocityLength = max(0.0001, hypot(particle.velocity.dx, particle.velocity.dy))
+                let directionAngle = atan2(particle.velocity.dy, particle.velocity.dx)
+                let speedFactor = min(1.7, velocityLength / 120)
+                let elongation = 1 + speedFactor * (0.25 + (1 - progress) * 0.9)
+                let baseRadius = max(0.9, particle.size * (0.68 + progress * 0.38))
+                let seed = particleShapeSeed(point: particle.point, timestamp: particle.timestamp)
+                let blobPath = makeIrregularBlobPath(
+                    center: NSPoint(x: x, y: y),
+                    baseRadius: baseRadius,
+                    seed: seed,
+                    elongation: elongation,
+                    rotation: directionAngle
+                )
+                let baseSplashColor = waterSplashColor.blended(withFraction: 0.42, of: particle.color) ?? particle.color
+                let fillColor = baseSplashColor.blended(withFraction: 0.4, of: .white) ?? baseSplashColor
+                fillColor.withAlphaComponent(0.78 * alpha).setFill()
+                blobPath.fill()
+
+                let outlineColor = waterShadowColor.blended(withFraction: 0.32, of: .black) ?? waterShadowColor
+                blobPath.lineWidth = max(0.35, baseRadius * 0.18)
+                outlineColor.withAlphaComponent(0.45 * alpha).setStroke()
+                blobPath.stroke()
             }
         }
     }
@@ -918,7 +1332,11 @@ final class TrailOverlayView: NSView {
         guard style.isEnabled else { return }
         let stateColor = style.color
 
-        let radius: CGFloat = clickEffectRadius * 0.45
+        let radius: CGFloat = if clickVisualStyle == .waterImpact {
+            max(6, trailLineWidth * (1.9 + max(0.1, waterImpactSpreadSpeed) * 1.8))
+        } else {
+            clickEffectRadius * 0.45
+        }
         let rect = NSRect(
             x: cursorPoint.x - radius,
             y: cursorPoint.y - radius,
@@ -949,6 +1367,37 @@ final class TrailOverlayView: NSView {
                 accent.color.withAlphaComponent(0.9 * alpha).setStroke()
                 path.stroke()
             }
+        }
+    }
+
+    private func drawWaterImpactDroplets(now: CFTimeInterval) {
+        guard !waterImpactDroplets.isEmpty else { return }
+        for droplet in waterImpactDroplets {
+            let age = now - droplet.timestamp
+            if age < 0 || age > droplet.lifetime { continue }
+            let progress = CGFloat(age / droplet.lifetime)
+            let alpha = max(0, 1 - progress)
+            let x = droplet.point.x + droplet.velocity.dx * CGFloat(age)
+            let y = droplet.point.y + droplet.velocity.dy * CGFloat(age) - 20 * CGFloat(age * age)
+            let direction = atan2(droplet.velocity.dy, droplet.velocity.dx)
+            let speed = hypot(droplet.velocity.dx, droplet.velocity.dy)
+            let elongation = 1 + min(1.5, speed / 140) * (0.2 + (1 - progress) * 0.95)
+            let sizeExpansion = 1 + min(0.28, CGFloat(age) * 0.22)
+            let baseRadius = max(0.8, droplet.size * sizeExpansion)
+            let blobPath = makeIrregularBlobPath(
+                center: NSPoint(x: x, y: y),
+                baseRadius: baseRadius,
+                seed: droplet.seed,
+                elongation: elongation,
+                rotation: direction
+            )
+            let fillColor = droplet.color.blended(withFraction: 0.42, of: .white) ?? droplet.color
+            fillColor.withAlphaComponent(0.86 * alpha).setFill()
+            blobPath.fill()
+            blobPath.lineWidth = max(0.4, baseRadius * 0.2)
+            let strokeColor = waterShadowColor.blended(withFraction: 0.3, of: .black) ?? waterShadowColor
+            strokeColor.withAlphaComponent(0.5 * alpha).setStroke()
+            blobPath.stroke()
         }
     }
 
@@ -1062,6 +1511,11 @@ final class TrailOverlayView: NSView {
         return max(0.04, base * scale)
     }
 
+    private func scaledWaterImpactLifetime(_ base: CFTimeInterval) -> CFTimeInterval {
+        let scale = max(0.1, waterImpactLifetimeSeconds / 0.32)
+        return max(0.04, base * scale)
+    }
+
     /// 处理按键按下：生成按下态视觉反馈与点击火花。
     private func handleButtonDown(_ button: MouseButtonKind, point: NSPoint, timestamp: CFTimeInterval) {
         guard isClickEffectsEnabled else {
@@ -1111,6 +1565,32 @@ final class TrailOverlayView: NSView {
                     timestamp: timestamp
                 )
             )
+        case .waterImpact:
+            let spreadScale = max(0.1, waterImpactSpreadSpeed)
+            let impactRadius = max(7, trailLineWidth * (2.3 + spreadScale * 3.1))
+            addPulse(
+                at: point,
+                color: style.color,
+                filled: true,
+                kind: .circle,
+                startRadius: max(3, impactRadius * 0.28),
+                endRadius: max(9, impactRadius * 0.78),
+                lineWidth: max(1.6, trailLineWidth * 0.58),
+                lifetime: scaledWaterImpactLifetime(0.24),
+                timestamp: timestamp
+            )
+            addPulse(
+                at: point,
+                color: waterHighlightColor.blended(withFraction: 0.45, of: style.color) ?? waterHighlightColor,
+                filled: false,
+                kind: .circle,
+                startRadius: max(5, impactRadius * 0.42),
+                endRadius: max(11, impactRadius * 1.02),
+                lineWidth: max(1.4, trailLineWidth * 0.5),
+                lifetime: scaledWaterImpactLifetime(0.3),
+                timestamp: timestamp
+            )
+            emitWaterImpactDroplets(at: point, color: style.color, timestamp: timestamp, burstScale: 1.0)
         }
         emitClickSpark(at: point, color: style.color, timestamp: timestamp)
         AppLogger.shared.log("click effect emitted: \(button.rawValue) down")
@@ -1157,6 +1637,21 @@ final class TrailOverlayView: NSView {
                 lifetime: scaledClickLifetime(0.3),
                 timestamp: timestamp
             )
+        case .waterImpact:
+            let spreadScale = max(0.1, waterImpactSpreadSpeed)
+            let impactRadius = max(8, trailLineWidth * (2.5 + spreadScale * 3.3))
+            addPulse(
+                at: point,
+                color: brightColor,
+                filled: false,
+                kind: .circle,
+                startRadius: max(5, impactRadius * 0.38),
+                endRadius: max(12, impactRadius * 1.18),
+                lineWidth: max(1.6, trailLineWidth * 0.62),
+                lifetime: scaledWaterImpactLifetime(0.36),
+                timestamp: timestamp
+            )
+            emitWaterImpactDroplets(at: point, color: brightColor, timestamp: timestamp, burstScale: 1.28)
         }
         emitClickSpark(at: point, color: brightColor, timestamp: timestamp)
         AppLogger.shared.log("click effect emitted: \(button.rawValue) up")
@@ -1221,12 +1716,244 @@ final class TrailOverlayView: NSView {
         return branch
     }
 
+    private func makeWaterRibbonNodes(samples: [TrailSample]) -> [WaterRibbonNode] {
+        guard samples.count > 2 else { return [] }
+        let strideStep = max(1, samples.count / 240)
+        var reducedSamples: [TrailSample] = []
+        reducedSamples.reserveCapacity(samples.count / strideStep + 2)
+        for index in stride(from: 0, to: samples.count, by: strideStep) {
+            reducedSamples.append(samples[index])
+        }
+        if let last = samples.last,
+           reducedSamples.last?.index != last.index
+        {
+            reducedSamples.append(last)
+        }
+        guard reducedSamples.count > 2 else { return [] }
+
+        var nodes: [WaterRibbonNode] = []
+        nodes.reserveCapacity(reducedSamples.count)
+        let total = max(1, reducedSamples.count - 1)
+
+        for index in reducedSamples.indices {
+            let previous = reducedSamples[max(0, index - 1)].point
+            let current = reducedSamples[index].point
+            let next = reducedSamples[min(reducedSamples.count - 1, index + 1)].point
+            let tangent = normalizedVector(dx: next.x - previous.x, dy: next.y - previous.y)
+            let normal = (x: -tangent.y, y: tangent.x)
+
+            let curveSign: CGFloat
+            let curveStrength: CGFloat
+            if index == 0 || index == reducedSamples.count - 1 {
+                curveSign = 0
+                curveStrength = 0
+            } else {
+                let inVector = normalizedVector(dx: current.x - previous.x, dy: current.y - previous.y)
+                let outVector = normalizedVector(dx: next.x - current.x, dy: next.y - current.y)
+                let cross = inVector.x * outVector.y - inVector.y * outVector.x
+                let dot = max(-1.0, min(1.0, inVector.x * outVector.x + inVector.y * outVector.y))
+                let angle = atan2(abs(cross), dot)
+                curveSign = cross == 0 ? 0 : (cross > 0 ? 1 : -1)
+                curveStrength = min(1.0, angle / (.pi * 0.66))
+            }
+
+            nodes.append(
+                WaterRibbonNode(
+                    point: current,
+                    normal: normal,
+                    alpha: reducedSamples[index].alpha,
+                    progress: CGFloat(index) / CGFloat(total),
+                    curveSign: curveSign,
+                    curveStrength: curveStrength,
+                    trailScale: reducedSamples[index].trailScale
+                )
+            )
+        }
+
+        return nodes
+    }
+
+    private func normalizedVector(dx: CGFloat, dy: CGFloat) -> (x: CGFloat, y: CGFloat) {
+        let length = max(0.0001, hypot(dx, dy))
+        return (dx / length, dy / length)
+    }
+
+    private func offset(_ point: NSPoint, by normal: (x: CGFloat, y: CGFloat), amount: CGFloat) -> NSPoint {
+        NSPoint(x: point.x + normal.x * amount, y: point.y + normal.y * amount)
+    }
+
+    private func waterWaveOffset(
+        index: Int,
+        progress: CGFloat,
+        randomness: CGFloat,
+        phaseSeed: Int,
+        trailScale: CGFloat
+    ) -> CGFloat {
+        guard randomness > 0.001 else { return 0 }
+        let seed = index * 113 + phaseSeed * 31
+        let primaryPhase = Double(progress) * 17.4 + Double(seed % 97) * 0.12
+        let secondaryPhase = Double(progress) * 31.2 + Double(seed % 53) * 0.18
+        let wave = sin(primaryPhase) * 0.72 + sin(secondaryPhase) * 0.28
+        let amplitude = trailLineWidth * max(0.1, trailScale) * (0.06 + randomness * 0.28)
+        return CGFloat(wave) * amplitude
+    }
+
+    private func drawWaterRibbonQuad(
+        start: NSPoint,
+        end: NSPoint,
+        startNormal: (x: CGFloat, y: CGFloat),
+        endNormal: (x: CGFloat, y: CGFloat),
+        centerOffsetStart: CGFloat,
+        centerOffsetEnd: CGFloat,
+        halfWidthStart: CGFloat,
+        halfWidthEnd: CGFloat,
+        color: NSColor,
+        alpha: CGFloat
+    ) {
+        guard alpha > 0.001 else { return }
+        let startCenter = offset(start, by: startNormal, amount: centerOffsetStart)
+        let endCenter = offset(end, by: endNormal, amount: centerOffsetEnd)
+        let startLeft = offset(startCenter, by: startNormal, amount: halfWidthStart)
+        let startRight = offset(startCenter, by: startNormal, amount: -halfWidthStart)
+        let endLeft = offset(endCenter, by: endNormal, amount: halfWidthEnd)
+        let endRight = offset(endCenter, by: endNormal, amount: -halfWidthEnd)
+        let path = NSBezierPath()
+        path.move(to: startLeft)
+        path.line(to: endLeft)
+        path.line(to: endRight)
+        path.line(to: startRight)
+        path.close()
+        color.withAlphaComponent(alpha).setFill()
+        path.fill()
+    }
+
+    private func particleShapeSeed(point: NSPoint, timestamp: CFTimeInterval) -> Int {
+        let timePart = Int((timestamp * 1_000).rounded())
+        let xPart = Int((point.x * 10).rounded())
+        let yPart = Int((point.y * 10).rounded())
+        return abs(timePart ^ (xPart << 2) ^ (yPart << 5))
+    }
+
+    private func makeIrregularBlobPath(
+        center: NSPoint,
+        baseRadius: CGFloat,
+        seed: Int,
+        elongation: CGFloat,
+        rotation: CGFloat
+    ) -> NSBezierPath {
+        let path = NSBezierPath()
+        let pointCount = 9
+        var points: [NSPoint] = []
+        points.reserveCapacity(pointCount)
+        let adjustedElongation = max(0.65, min(2.8, elongation))
+
+        for index in 0..<pointCount {
+            let baseAngle = (CGFloat(index) / CGFloat(pointCount)) * (.pi * 2)
+            let jitterAngle = (pseudoRandom01(seed + index * 11) - 0.5) * 0.24
+            let angle = baseAngle + jitterAngle
+            let radiusJitter = 0.72 + pseudoRandom01(seed + index * 19) * 0.56
+            let radial = baseRadius * radiusJitter
+            let localX = cos(angle) * radial * adjustedElongation
+            let localY = sin(angle) * radial / max(0.72, adjustedElongation * 0.86)
+            let rotatedX = localX * cos(rotation) - localY * sin(rotation)
+            let rotatedY = localX * sin(rotation) + localY * cos(rotation)
+            points.append(NSPoint(x: center.x + rotatedX, y: center.y + rotatedY))
+        }
+
+        if let first = points.first {
+            path.move(to: first)
+            for point in points.dropFirst() {
+                path.line(to: point)
+            }
+            path.close()
+        }
+        path.lineJoinStyle = .round
+        return path
+    }
+
+    private func normalizedWaterRatios() -> (highlight: CGFloat, primary: CGFloat, shadow: CGFloat) {
+        let highlight = max(0, waterHighlightRatio)
+        let primary = max(0, waterPrimaryRatio)
+        let shadow = max(0, waterShadowRatio)
+        let sum = highlight + primary + shadow
+        guard sum > 0.0001 else { return (0.34, 0.44, 0.22) }
+        return (highlight / sum, primary / sum, shadow / sum)
+    }
+
+    private func waterBladeSegmentColor(
+        sampleIndex: Int,
+        phaseSeed: Int,
+        baseColor: NSColor,
+        highlightWeight: CGFloat,
+        primaryWeight: CGFloat,
+        randomness: CGFloat
+    ) -> NSColor {
+        let seed = sampleIndex * 131 + phaseSeed * 17
+        let pick = pseudoRandom01(seed + 3)
+        let selectedColor: NSColor
+        if pick < highlightWeight {
+            selectedColor = waterHighlightColor
+        } else if pick < highlightWeight + primaryWeight {
+            selectedColor = waterPrimaryColor
+        } else {
+            selectedColor = waterShadowColor
+        }
+        let blendFraction = 0.14 + randomness * 0.86
+        let mixed = baseColor.blended(withFraction: blendFraction, of: selectedColor) ?? selectedColor
+        let sparkle = pseudoRandom01(seed + 8)
+        let whitenFraction = (0.04 + randomness * 0.18) * sparkle
+        return mixed.blended(withFraction: whitenFraction, of: .white) ?? mixed
+    }
+
+    private func weightedWaterColor(
+        highlightWeight: CGFloat,
+        primaryWeight: CGFloat,
+        shadowWeight: CGFloat
+    ) -> NSColor {
+        let highlightComp = rgbaComponents(of: waterHighlightColor)
+        let primaryComp = rgbaComponents(of: waterPrimaryColor)
+        let shadowComp = rgbaComponents(of: waterShadowColor)
+
+        let r = highlightComp.r * highlightWeight + primaryComp.r * primaryWeight + shadowComp.r * shadowWeight
+        let g = highlightComp.g * highlightWeight + primaryComp.g * primaryWeight + shadowComp.g * shadowWeight
+        let b = highlightComp.b * highlightWeight + primaryComp.b * primaryWeight + shadowComp.b * shadowWeight
+        let a = highlightComp.a * highlightWeight + primaryComp.a * primaryWeight + shadowComp.a * shadowWeight
+        return NSColor(calibratedRed: r, green: g, blue: b, alpha: a)
+    }
+
+    private func rgbaComponents(of color: NSColor) -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) {
+        let converted = color.usingColorSpace(.deviceRGB) ?? color.usingColorSpace(.sRGB) ?? color
+        return (
+            converted.redComponent,
+            converted.greenComponent,
+            converted.blueComponent,
+            converted.alphaComponent
+        )
+    }
+
     private func trailBaseColor(index: Int, now: CFTimeInterval) -> NSColor {
         switch trailStyle {
         case .rainbow:
             return rainbowColor(for: index, now: now)
         case .neon:
             return neonPrimaryColor.blended(withFraction: 0.5, of: neonSecondaryColor) ?? neonPrimaryColor
+        case .waterBlade:
+            let ratios = normalizedWaterRatios()
+            let randomness = max(0, min(1, waterMixRandomness / 100))
+            let phaseSeed = waterMixSeedLocked ? 0 : Int(now * 42)
+            let baseColor = weightedWaterColor(
+                highlightWeight: ratios.highlight,
+                primaryWeight: ratios.primary,
+                shadowWeight: ratios.shadow
+            )
+            return waterBladeSegmentColor(
+                sampleIndex: index,
+                phaseSeed: phaseSeed,
+                baseColor: baseColor,
+                highlightWeight: ratios.highlight,
+                primaryWeight: ratios.primary,
+                randomness: randomness
+            )
         default:
             return trailColor
         }
@@ -1234,22 +1961,35 @@ final class TrailOverlayView: NSView {
 
     /// 沿轨迹段发射附加粒子/墨迹/电弧效果。
     /// Note: 发射密度同时受“特效密度（强度预设）”和轨迹段长度影响。
-    private func emitTrailEffects(from start: NSPoint, to end: NSPoint, timestamp: CFTimeInterval) {
+    private func emitTrailEffects(
+        from start: NSPoint,
+        to end: NSPoint,
+        timestamp: CFTimeInterval,
+        effectScale: CGFloat
+    ) {
         guard isTrailEnabled else { return }
         if trailStyle == .ribbon { return }
-        guard intensityPreset.effectsEnabled else { return }
+        guard isTrailEffectsEnabled else { return }
         let distance = hypot(end.x - start.x, end.y - start.y)
         guard distance > 0.1 else { return }
+        let clampedEffectScale = max(0.1, effectScale)
 
         let baseCount = max(1, Int(distance / 10))
         let styleMultiplier: CGFloat = switch trailEffectStyle {
         case .particles: 1.0
         case .ink: 0.55
         case .electric: 1.15
+        case .waterSplash: 1.15
         }
+        let splashDensityScale: CGFloat = if trailEffectStyle == .waterSplash {
+            max(0.08, pow(max(0.1, waterSplashDensity), 1.12))
+        } else {
+            1.0
+        }
+        let waterStyleDensityMultiplier: CGFloat = trailStyle == .waterBlade ? 0.42 : 1.0
         let spawnCount = min(
-            Int(CGFloat(baseCount) * intensityPreset.particleSpawnMultiplier * styleMultiplier) + 1,
-            max(4, Int(12 * intensityPreset.particleSpawnMultiplier))
+            Int(CGFloat(baseCount) * effectSpawnMultiplier * styleMultiplier * waterStyleDensityMultiplier * splashDensityScale) + 1,
+            max(4, Int(12 * effectSpawnMultiplier))
         )
         let direction = CGVector(dx: end.x - start.x, dy: end.y - start.y)
         let directionLength = max(0.001, hypot(direction.dx, direction.dy))
@@ -1271,25 +2011,50 @@ final class TrailOverlayView: NSView {
             switch trailEffectStyle {
             case .particles:
                 let angle = CGFloat.random(in: 0...(2 * .pi))
-                let speed = CGFloat.random(in: intensityPreset.particleSpeedRange)
+                let speed = CGFloat.random(in: effectParticleSpeedRange)
                 velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed)
-                size = CGFloat.random(in: intensityPreset.particleSizeRange)
-                lifetime = intensityPreset.particleLifetime * Double(CGFloat.random(in: 0.75...1.15))
+                size = CGFloat.random(in: effectParticleSizeRange) * clampedEffectScale
+                lifetime = effectParticleLifetime * Double(CGFloat.random(in: 0.75...1.15))
                 color = effectBaseColor.blended(withFraction: 0.18, of: .white) ?? effectBaseColor
             case .ink:
                 velocity = CGVector(dx: CGFloat.random(in: -12...12), dy: CGFloat.random(in: -12...12))
-                size = CGFloat.random(in: 2.5...6.5)
+                size = CGFloat.random(in: 2.5...6.5) * clampedEffectScale
                 lifetime = 0.55
                 color = effectBaseColor.withAlphaComponent(0.55)
             case .electric:
-                let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound ... intensityPreset.particleSpeedRange.upperBound * 1.8)
+                let speed = CGFloat.random(in: effectParticleSpeedRange.upperBound ... effectParticleSpeedRange.upperBound * 1.8)
                 let angle = CGFloat.random(in: -0.9...0.9)
                 let rotatedX = normal.dx * cos(angle) - normal.dy * sin(angle)
                 let rotatedY = normal.dx * sin(angle) + normal.dy * cos(angle)
                 velocity = CGVector(dx: rotatedX * speed, dy: rotatedY * speed)
-                size = CGFloat.random(in: 1.0...2.4)
+                size = CGFloat.random(in: 1.0...2.4) * clampedEffectScale
                 lifetime = 0.14
                 color = (effectBaseColor.blended(withFraction: 0.55, of: .white) ?? effectBaseColor)
+            case .waterSplash:
+                let tangent = CGVector(dx: normal.dx, dy: normal.dy)
+                let side = CGVector(dx: -tangent.dy, dy: tangent.dx)
+                let spread = CGFloat.random(in: -1.25...1.25)
+                let sprayX = tangent.dx + side.dx * spread
+                let sprayY = tangent.dy + side.dy * spread
+                let sprayLength = max(0.001, hypot(sprayX, sprayY))
+                let sprayDirX = sprayX / sprayLength
+                let sprayDirY = sprayY / sprayLength
+                let speedScale = max(0.1, waterSplashSpeed)
+                let speed = CGFloat.random(in: 28...125) * (0.65 + effectSpawnMultiplier * 0.5) * speedScale
+                velocity = CGVector(dx: sprayDirX * speed, dy: sprayDirY * speed)
+                let randomUnit = CGFloat.random(in: 0...1)
+                size = (1.1 + pow(randomUnit, 2.4) * 10.5) * waterSplashSize * clampedEffectScale
+                let lifetimeScale = max(0.1, waterSplashLifetimeSeconds / 0.26)
+                lifetime = Double(CGFloat.random(in: 0.12...0.42)) * lifetimeScale
+                let randomColor = CGFloat.random(in: 0...1)
+                let baseColor = waterSplashColor.blended(withFraction: 0.32, of: effectBaseColor) ?? waterSplashColor
+                if randomColor < 0.55 {
+                    color = waterHighlightColor.blended(withFraction: 0.28, of: baseColor) ?? waterHighlightColor
+                } else if randomColor < 0.87 {
+                    color = waterPrimaryColor.blended(withFraction: 0.42, of: baseColor) ?? waterPrimaryColor
+                } else {
+                    color = waterShadowColor.blended(withFraction: 0.36, of: baseColor) ?? waterShadowColor
+                }
             }
 
             particles.append(
@@ -1306,15 +2071,30 @@ final class TrailOverlayView: NSView {
     }
 
     private func emitClickSpark(at point: NSPoint, color: NSColor, timestamp: CFTimeInterval) {
-        guard intensityPreset.effectsEnabled else { return }
-        let count = max(6, Int(10 * intensityPreset.particleSpawnMultiplier))
+        guard isTrailEffectsEnabled else { return }
+        let isWaterImpactClick = clickVisualStyle == .waterImpact
+        let count: Int
+        if isWaterImpactClick {
+            let densityScale = max(0.03, pow(max(0.1, waterImpactDropletDensity), 1.25))
+            count = max(1, Int((4 + 6 * effectSpawnMultiplier) * densityScale))
+        } else {
+            count = max(6, Int(10 * effectSpawnMultiplier))
+        }
         for _ in 0..<count {
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let speed = CGFloat.random(in: intensityPreset.particleSpeedRange.upperBound * 0.8 ... intensityPreset.particleSpeedRange.upperBound * 1.25)
+            let speed = CGFloat.random(in: effectParticleSpeedRange.upperBound * 0.8 ... effectParticleSpeedRange.upperBound * 1.25)
             let velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed)
-            let sizeBoost = max(0.8, clickEffectRadius / 24)
-            let size = CGFloat.random(in: intensityPreset.particleSizeRange.lowerBound ... intensityPreset.particleSizeRange.upperBound * 1.25) * sizeBoost
-            let lifetime = scaledClickLifetime(intensityPreset.particleLifetime * Double(CGFloat.random(in: 0.6...1.05)))
+            let sizeBoost: CGFloat = if isWaterImpactClick {
+                max(0.12, waterImpactDropletSize * 0.72)
+            } else {
+                max(0.8, clickEffectRadius / 24)
+            }
+            let size = CGFloat.random(in: effectParticleSizeRange.lowerBound ... effectParticleSizeRange.upperBound * 1.25) * sizeBoost
+            let lifetime: CFTimeInterval = if isWaterImpactClick {
+                scaledWaterImpactLifetime(effectParticleLifetime * Double(CGFloat.random(in: 0.6...1.05)))
+            } else {
+                scaledClickLifetime(effectParticleLifetime * Double(CGFloat.random(in: 0.6...1.05)))
+            }
             particles.append(
                 Particle(
                     point: point,
@@ -1323,6 +2103,51 @@ final class TrailOverlayView: NSView {
                     color: color,
                     lifetime: lifetime,
                     timestamp: timestamp
+                )
+            )
+        }
+    }
+
+    private func emitWaterImpactDroplets(
+        at point: NSPoint,
+        color: NSColor,
+        timestamp: CFTimeInterval,
+        burstScale: CGFloat
+    ) {
+        let densityScale = max(0.1, waterImpactDropletDensity)
+        let spreadScale = max(0.1, waterImpactSpreadSpeed)
+        let densityCurve = max(0.03, pow(densityScale, 1.4))
+        let baseBurstCount = (8 + 10 * effectSpawnMultiplier) * burstScale
+        let burstCount = max(1, Int(baseBurstCount * densityCurve))
+        for index in 0..<burstCount {
+            let spread = CGFloat(index) / CGFloat(max(1, burstCount - 1))
+            let baseAngle = spread * (.pi * 2)
+            let randomAngle = (pseudoRandom01(Int(timestamp * 1_000) + index * 13) - 0.5) * 0.88
+            let angle = baseAngle + randomAngle
+            let speed = CGFloat.random(in: 32...150) * (0.65 + burstScale * 0.52) * spreadScale
+            let velocity = CGVector(dx: cos(angle) * speed, dy: sin(angle) * speed + CGFloat.random(in: 16...68))
+            let randomUnit = CGFloat.random(in: 0...1)
+            let baseSize = 1.2 + pow(randomUnit, 2.1) * (8.8 + burstScale * 3.2)
+            let size = baseSize * max(0.1, waterImpactDropletSize)
+            let lifetime = scaledWaterImpactLifetime(Double(CGFloat.random(in: 0.18...0.52)))
+            let variant = CGFloat.random(in: 0...1)
+            let dropletColor: NSColor
+            if variant < 0.48 {
+                dropletColor = waterHighlightColor
+            } else if variant < 0.82 {
+                dropletColor = color.blended(withFraction: 0.34, of: waterPrimaryColor) ?? color
+            } else {
+                dropletColor = waterPrimaryColor.blended(withFraction: 0.28, of: waterShadowColor) ?? waterPrimaryColor
+            }
+            waterImpactDroplets.append(
+                WaterImpactDroplet(
+                    point: point,
+                    velocity: velocity,
+                    size: size,
+                    color: dropletColor,
+                    lifetime: lifetime,
+                    timestamp: timestamp,
+                    seed: particleShapeSeed(point: point, timestamp: timestamp + Double(index) * 0.007)
                 )
             )
         }
@@ -1348,15 +2173,17 @@ final class TrailOverlayView: NSView {
         trimExpiredPrefix(from: &pulses) { now - $0.timestamp > $0.lifetime }
         trimExpiredPrefix(from: &particles) { now - $0.timestamp > $0.lifetime }
         trimExpiredPrefix(from: &clickAccents) { now - $0.timestamp > $0.lifetime }
+        trimExpiredPrefix(from: &waterImpactDroplets) { now - $0.timestamp > $0.lifetime }
         trimExpiredPrefix(from: &dashBursts) { now - $0.timestamp > $0.lifetime }
-        if particles.count > intensityPreset.maxParticleCount {
-            particles.removeFirst(particles.count - intensityPreset.maxParticleCount)
+        if particles.count > effectMaxParticleCount {
+            particles.removeFirst(particles.count - effectMaxParticleCount)
         }
         let hasAnimatedContent =
             !movePoints.isEmpty ||
             !pulses.isEmpty ||
             !particles.isEmpty ||
             !clickAccents.isEmpty ||
+            !waterImpactDroplets.isEmpty ||
             !dashBursts.isEmpty ||
             pressedButton != .none ||
             isMagnifierActive

@@ -5,6 +5,7 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import UniformTypeIdentifiers
 
 @MainActor
 /// 翻转坐标系的容器视图，确保滚动内容从顶部开始布局。
@@ -15,7 +16,7 @@ private final class FlippedTopAlignedView: NSView {
 @MainActor
 /// 设置窗口控制器。
 /// 职责：构建设置 UI、同步控件状态，并对外发布设置变更。
-final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private enum SidebarTab: String, CaseIterable {
         case trailEffects
         case clickEffects
@@ -41,18 +42,32 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private enum TrailPresetOption: CaseIterable {
+    private enum TrailPresetOption: Equatable {
         case custom
         case thunderFirstForm
+        case waterFirstForm
+        case userPreset(id: String)
 
-        var title: String {
+        var isBuiltIn: Bool {
             switch self {
-            case .custom:
-                return i18n("preset.custom", "自定义")
-            case .thunderFirstForm:
-                return i18n("preset.thunderFirstForm", "雷之呼吸·壹之型")
+            case .custom, .thunderFirstForm, .waterFirstForm:
+                true
+            case .userPreset:
+                false
             }
         }
+    }
+
+    private enum PresetManagerRowKind: Equatable {
+        case thunderFirstForm
+        case waterFirstForm
+        case userPreset(id: String)
+    }
+
+    private struct PresetManagerRow {
+        let kind: PresetManagerRowKind
+        let name: String
+        let updatedAt: Date?
     }
 
     var onSettingsChanged: ((AppSettings) -> Void)?
@@ -62,6 +77,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var settings: AppSettings
     private var isSyncingControls = false
     private var activeSidebarTab: SidebarTab = .trailEffects
+    private var trailPresetOptions: [TrailPresetOption] = []
+    private var customTrailPresets: [CustomTrailPreset] = []
+    private var selectedTrailPresetOption: TrailPresetOption = .custom
     private var sidebarButtons: [SidebarTab: NSButton] = [:]
     private var sidebarButtonToTab: [ObjectIdentifier: SidebarTab] = [:]
     private var sidebarContentViews: [SidebarTab: NSView] = [:]
@@ -75,6 +93,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let magnifierEnabledSwitch = NSSwitch()
     private let magnifierShowEffectsSwitch = NSSwitch()
     private let speedBurstSwitch = NSSwitch()
+    private let trailEffectsSwitch = NSSwitch()
+    private let waterMixSeedLockSwitch = NSSwitch()
 
     private let trailColorWell = NSColorWell()
     private let trailEffectColorWell = NSColorWell()
@@ -82,6 +102,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let speedBurstAccentColorWell = NSColorWell()
     private let neonPrimaryColorWell = NSColorWell()
     private let neonSecondaryColorWell = NSColorWell()
+    private let waterHighlightColorWell = NSColorWell()
+    private let waterPrimaryColorWell = NSColorWell()
+    private let waterShadowColorWell = NSColorWell()
+    private let waterSplashColorWell = NSColorWell()
     private let magnifierBorderColorWell = NSColorWell()
 
     private let trailWidthSlider = NSSlider()
@@ -94,6 +118,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let speedBurstCooldownValueLabel = NSTextField(labelWithString: "")
     private let speedBurstDurationSlider = NSSlider()
     private let speedBurstDurationValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstDurationMinSlider = NSSlider()
+    private let speedBurstDurationMinValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstDurationMaxSlider = NSSlider()
+    private let speedBurstDurationMaxValueLabel = NSTextField(labelWithString: "")
     private let speedBurstJitterSlider = NSSlider()
     private let speedBurstJitterValueLabel = NSTextField(labelWithString: "")
     private let speedBurstMinLengthSlider = NSSlider()
@@ -102,14 +130,48 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let speedBurstMaxLengthValueLabel = NSTextField(labelWithString: "")
     private let speedBurstWidthMultiplierSlider = NSSlider()
     private let speedBurstWidthMultiplierValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstTrailMinScaleSlider = NSSlider()
+    private let speedBurstTrailMinScaleValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstTrailMaxScaleSlider = NSSlider()
+    private let speedBurstTrailMaxScaleValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstEffectMinScaleSlider = NSSlider()
+    private let speedBurstEffectMinScaleValueLabel = NSTextField(labelWithString: "")
+    private let speedBurstEffectMaxScaleSlider = NSSlider()
+    private let speedBurstEffectMaxScaleValueLabel = NSTextField(labelWithString: "")
     private let speedBurstAccentDurationSlider = NSSlider()
     private let speedBurstAccentDurationValueLabel = NSTextField(labelWithString: "")
     private let speedBurstAccentSizeSlider = NSSlider()
     private let speedBurstAccentSizeValueLabel = NSTextField(labelWithString: "")
+    private let waterHighlightRatioSlider = NSSlider()
+    private let waterHighlightRatioValueLabel = NSTextField(labelWithString: "")
+    private let waterPrimaryRatioSlider = NSSlider()
+    private let waterPrimaryRatioValueLabel = NSTextField(labelWithString: "")
+    private let waterShadowRatioSlider = NSSlider()
+    private let waterShadowRatioValueLabel = NSTextField(labelWithString: "")
+    private let waterMixRandomnessSlider = NSSlider()
+    private let waterMixRandomnessValueLabel = NSTextField(labelWithString: "")
+    private let waterSplashSizeSlider = NSSlider()
+    private let waterSplashSizeValueLabel = NSTextField(labelWithString: "")
+    private let waterSplashSpeedSlider = NSSlider()
+    private let waterSplashSpeedValueLabel = NSTextField(labelWithString: "")
+    private let waterSplashLifetimeSlider = NSSlider()
+    private let waterSplashLifetimeValueLabel = NSTextField(labelWithString: "")
+    private let waterSplashDensitySlider = NSSlider()
+    private let waterSplashDensityValueLabel = NSTextField(labelWithString: "")
+    private let trailEffectIntensitySlider = NSSlider()
+    private let trailEffectIntensityValueLabel = NSTextField(labelWithString: "")
     private let clickRadiusSlider = NSSlider()
     private let clickRadiusValueLabel = NSTextField(labelWithString: "")
     private let clickDurationSlider = NSSlider()
     private let clickDurationValueLabel = NSTextField(labelWithString: "")
+    private let waterImpactDensitySlider = NSSlider()
+    private let waterImpactDensityValueLabel = NSTextField(labelWithString: "")
+    private let waterImpactSpreadSpeedSlider = NSSlider()
+    private let waterImpactSpreadSpeedValueLabel = NSTextField(labelWithString: "")
+    private let waterImpactLifetimeSlider = NSSlider()
+    private let waterImpactLifetimeValueLabel = NSTextField(labelWithString: "")
+    private let waterImpactDropletSizeSlider = NSSlider()
+    private let waterImpactDropletSizeValueLabel = NSTextField(labelWithString: "")
     private let magnifierRadiusSlider = NSSlider()
     private let magnifierRadiusValueLabel = NSTextField(labelWithString: "")
     private let magnifierZoomSlider = NSSlider()
@@ -122,9 +184,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let trailStylePopup = NSPopUpButton()
     private let trailEffectPopup = NSPopUpButton()
     private let speedBurstTypePopup = NSPopUpButton()
+    private let speedSurgeScaleModePopup = NSPopUpButton()
     private let clickStylePopup = NSPopUpButton()
-    private let intensityPopup = NSPopUpButton()
     private let trailPresetPopup = NSPopUpButton()
+    private let presetManageButton = NSButton(title: "", target: nil, action: nil)
     private let languagePopup = NSPopUpButton()
     private let magnifierShortcutButton = NSButton(title: "", target: nil, action: nil)
     private let magnifierShortcutHint = NSTextField(labelWithString: "")
@@ -145,26 +208,140 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private lazy var trailTypeRow = makePopupRow(title: i18n("row.trail.type", "轨迹类型"), popup: trailStylePopup)
     private lazy var trailColorRow = makeColorRow(title: i18n("row.trail.color", "轨迹颜色"), control: trailColorWell)
+    private lazy var waterColorsRow = makeWaterColorsRow()
+    private lazy var waterHighlightRatioRow = makeSliderRow(
+        title: i18n("row.trail.waterHighlightRatio", "高光占比"),
+        slider: waterHighlightRatioSlider,
+        valueLabel: waterHighlightRatioValueLabel
+    )
+    private lazy var waterPrimaryRatioRow = makeSliderRow(
+        title: i18n("row.trail.waterPrimaryRatio", "主色占比"),
+        slider: waterPrimaryRatioSlider,
+        valueLabel: waterPrimaryRatioValueLabel
+    )
+    private lazy var waterShadowRatioRow = makeSliderRow(
+        title: i18n("row.trail.waterShadowRatio", "阴影占比"),
+        slider: waterShadowRatioSlider,
+        valueLabel: waterShadowRatioValueLabel
+    )
+    private lazy var waterMixRandomnessRow = makeSliderRow(
+        title: i18n("row.trail.waterMixRandomness", "随机混色强度"),
+        slider: waterMixRandomnessSlider,
+        valueLabel: waterMixRandomnessValueLabel
+    )
+    private lazy var waterMixSeedLockRow = makeSwitchRow(
+        title: i18n("row.trail.waterSeedLock", "随机种子锁定"),
+        subtitle: i18n("row.trail.waterSeedLock.subtitle", "锁定后每次效果风格稳定"),
+        toggle: waterMixSeedLockSwitch
+    )
     private lazy var trailEffectColorRow = makeColorRow(title: i18n("row.trail.effectColor", "特效颜色"), control: trailEffectColorWell)
     private lazy var neonColorsRow = makeNeonColorsRow()
     private lazy var rainbowColorsRow = makeRainbowColorsRow()
     private lazy var trailEffectTypeRow = makePopupRow(title: i18n("row.trail.effectType", "特效类型"), popup: trailEffectPopup)
+    private lazy var trailEffectsEnabledRow = makeSwitchRow(
+        title: i18n("row.trail.effects.enabled", "开启特效"),
+        subtitle: i18n("row.trail.effects.enabled.subtitle", "关闭后不渲染任何轨迹附加特效"),
+        toggle: trailEffectsSwitch
+    )
+    private lazy var trailEffectIntensityRow = makeSliderRow(
+        title: i18n("row.trail.effectIntensity", "特效强度"),
+        slider: trailEffectIntensitySlider,
+        valueLabel: trailEffectIntensityValueLabel
+    )
+    private lazy var waterSplashSizeRow = makeSliderRow(
+        title: i18n("row.trail.waterSplashSize", "水花大小"),
+        slider: waterSplashSizeSlider,
+        valueLabel: waterSplashSizeValueLabel
+    )
+    private lazy var waterSplashSpeedRow = makeSliderRow(
+        title: i18n("row.trail.waterSplashSpeed", "水花速度"),
+        slider: waterSplashSpeedSlider,
+        valueLabel: waterSplashSpeedValueLabel
+    )
+    private lazy var waterSplashLifetimeRow = makeSliderRow(
+        title: i18n("row.trail.waterSplashLifetime", "水花时间（毫秒）"),
+        slider: waterSplashLifetimeSlider,
+        valueLabel: waterSplashLifetimeValueLabel
+    )
+    private lazy var waterSplashDensityRow = makeSliderRow(
+        title: i18n("row.trail.waterSplashDensity", "水花密度"),
+        slider: waterSplashDensitySlider,
+        valueLabel: waterSplashDensityValueLabel
+    )
+    private lazy var waterSplashColorRow = makeColorRow(
+        title: i18n("row.trail.waterSplashColor", "水花颜色"),
+        control: waterSplashColorWell
+    )
     private lazy var trailWidthRow = makeSliderRow(title: i18n("row.trail.width", "轨迹粗细"), slider: trailWidthSlider, valueLabel: trailWidthValueLabel)
     private lazy var trailLengthRow = makeSliderRow(title: i18n("row.trail.lengthMs", "轨迹长度（毫秒）"), slider: trailLengthSlider, valueLabel: trailLengthValueLabel)
-    private lazy var trailIntensityRow = makePopupRow(title: i18n("row.trail.intensity", "特效强度"), popup: intensityPopup)
     private lazy var speedBurstTypeRow = makePopupRow(title: i18n("row.speedBurst.type", "爆发类型"), popup: speedBurstTypePopup)
     private lazy var speedBurstLineColorRow = makeColorRow(title: i18n("row.speedBurst.lineColor", "爆发线颜色"), control: speedBurstLineColorWell)
     private lazy var speedBurstAccentColorRow = makeColorRow(title: i18n("row.speedBurst.accentColor", "端点爆发颜色"), control: speedBurstAccentColorWell)
     private lazy var speedBurstVelocityRow = makeSliderRow(title: i18n("row.speedBurst.velocity", "触发速度阈值"), slider: speedBurstVelocitySlider, valueLabel: speedBurstVelocityValueLabel)
     private lazy var speedBurstCooldownRow = makeSliderRow(title: i18n("row.speedBurst.cooldown", "冷却时间（毫秒）"), slider: speedBurstCooldownSlider, valueLabel: speedBurstCooldownValueLabel)
     private lazy var speedBurstDurationRow = makeSliderRow(title: i18n("row.speedBurst.duration", "爆发线时长（毫秒）"), slider: speedBurstDurationSlider, valueLabel: speedBurstDurationValueLabel)
+    private lazy var speedSurgeScaleModeRow = makePopupRow(
+        title: i18n("row.speedBurst.surgeScaleMode", "放大逻辑"),
+        popup: speedSurgeScaleModePopup
+    )
+    private lazy var speedBurstDurationMinRow = makeSliderRow(
+        title: i18n("row.speedBurst.durationMin", "爆发最小时长（毫秒）"),
+        slider: speedBurstDurationMinSlider,
+        valueLabel: speedBurstDurationMinValueLabel
+    )
+    private lazy var speedBurstDurationMaxRow = makeSliderRow(
+        title: i18n("row.speedBurst.durationMax", "爆发最大时长（毫秒）"),
+        slider: speedBurstDurationMaxSlider,
+        valueLabel: speedBurstDurationMaxValueLabel
+    )
     private lazy var speedBurstJitterRow = makeSliderRow(title: i18n("row.speedBurst.jitter", "爆发线抖动幅度"), slider: speedBurstJitterSlider, valueLabel: speedBurstJitterValueLabel)
     private lazy var speedBurstMinLengthRow = makeSliderRow(title: i18n("row.speedBurst.minLength", "爆发线最小长度"), slider: speedBurstMinLengthSlider, valueLabel: speedBurstMinLengthValueLabel)
     private lazy var speedBurstMaxLengthRow = makeSliderRow(title: i18n("row.speedBurst.maxLength", "爆发线最大长度"), slider: speedBurstMaxLengthSlider, valueLabel: speedBurstMaxLengthValueLabel)
     private lazy var speedBurstWidthMultiplierRow = makeSliderRow(title: i18n("row.speedBurst.widthMultiplier", "爆发线宽系数"), slider: speedBurstWidthMultiplierSlider, valueLabel: speedBurstWidthMultiplierValueLabel)
+    private lazy var speedBurstTrailMinScaleRow = makeSliderRow(
+        title: i18n("row.speedBurst.trailScaleMin", "轨迹最小放大系数"),
+        slider: speedBurstTrailMinScaleSlider,
+        valueLabel: speedBurstTrailMinScaleValueLabel
+    )
+    private lazy var speedBurstTrailMaxScaleRow = makeSliderRow(
+        title: i18n("row.speedBurst.trailScaleMax", "轨迹最大放大系数"),
+        slider: speedBurstTrailMaxScaleSlider,
+        valueLabel: speedBurstTrailMaxScaleValueLabel
+    )
+    private lazy var speedBurstEffectMinScaleRow = makeSliderRow(
+        title: i18n("row.speedBurst.effectScaleMin", "最小特效放大系数"),
+        slider: speedBurstEffectMinScaleSlider,
+        valueLabel: speedBurstEffectMinScaleValueLabel
+    )
+    private lazy var speedBurstEffectMaxScaleRow = makeSliderRow(
+        title: i18n("row.speedBurst.effectScaleMax", "最大特效放大系数"),
+        slider: speedBurstEffectMaxScaleSlider,
+        valueLabel: speedBurstEffectMaxScaleValueLabel
+    )
     private lazy var speedBurstAccentDurationRow = makeSliderRow(title: i18n("row.speedBurst.accentDuration", "端点爆发时长（毫秒）"), slider: speedBurstAccentDurationSlider, valueLabel: speedBurstAccentDurationValueLabel)
     private lazy var speedBurstAccentSizeRow = makeSliderRow(title: i18n("row.speedBurst.accentSize", "端点爆发大小"), slider: speedBurstAccentSizeSlider, valueLabel: speedBurstAccentSizeValueLabel)
+    private lazy var clickRadiusRow = makeSliderRow(title: i18n("row.click.radius", "点击效果半径"), slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel)
     private lazy var clickDurationRow = makeSliderRow(title: i18n("row.click.duration", "点击效果时长（毫秒）"), slider: clickDurationSlider, valueLabel: clickDurationValueLabel)
+    private lazy var waterImpactDensityRow = makeSliderRow(
+        title: i18n("row.click.waterImpact.density", "水滴密度"),
+        slider: waterImpactDensitySlider,
+        valueLabel: waterImpactDensityValueLabel
+    )
+    private lazy var waterImpactSpreadSpeedRow = makeSliderRow(
+        title: i18n("row.click.waterImpact.spreadSpeed", "水滴扩散速度"),
+        slider: waterImpactSpreadSpeedSlider,
+        valueLabel: waterImpactSpreadSpeedValueLabel
+    )
+    private lazy var waterImpactLifetimeRow = makeSliderRow(
+        title: i18n("row.click.waterImpact.lifetime", "水滴时长（毫秒）"),
+        slider: waterImpactLifetimeSlider,
+        valueLabel: waterImpactLifetimeValueLabel
+    )
+    private lazy var waterImpactDropletSizeRow = makeSliderRow(
+        title: i18n("row.click.waterImpact.size", "水滴大小"),
+        slider: waterImpactDropletSizeSlider,
+        valueLabel: waterImpactDropletSizeValueLabel
+    )
 
     private var clickToggleButtons: [MouseButtonKind: NSSwitch] = [:]
     private var clickColorWells: [MouseButtonKind: NSColorWell] = [:]
@@ -173,6 +350,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private var shortcutCaptureMonitor: Any?
     private var isShortcutRecording = false
+    private var presetManagerRows: [PresetManagerRow] = []
+    private var presetManagerPanel: NSPanel?
+    private weak var presetManagerTableView: NSTableView?
 
     init(initialSettings: AppSettings) {
         settings = initialSettings
@@ -289,10 +469,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let regularSection = buildRegularSection()
         let trailSection = buildTrailSection()
+        let trailEffectSection = buildTrailEffectSection()
         let speedBurstSection = buildSpeedBurstSection()
         let clickSection = buildClickSection()
         let magnifierSection = buildMagnifierSection()
-        let trailComposite = makeSidebarCompositeContent(sections: [trailSection, speedBurstSection])
+        let trailComposite = makeSidebarCompositeContent(sections: [trailSection, trailEffectSection, speedBurstSection])
         let contentsByTab: [(SidebarTab, NSView)] = [
             (.trailEffects, trailComposite),
             (.clickEffects, clickSection),
@@ -532,6 +713,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         speedBurstSwitch.target = self
         speedBurstSwitch.action = #selector(speedBurstSwitchChanged(_:))
+        trailEffectsSwitch.target = self
+        trailEffectsSwitch.action = #selector(trailEffectsSwitchChanged(_:))
 
         clickEffectsSwitch.target = self
         clickEffectsSwitch.action = #selector(clickEffectsSwitchChanged(_:))
@@ -554,6 +737,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         neonPrimaryColorWell.action = #selector(neonPrimaryColorChanged(_:))
         neonSecondaryColorWell.target = self
         neonSecondaryColorWell.action = #selector(neonSecondaryColorChanged(_:))
+        waterHighlightColorWell.target = self
+        waterHighlightColorWell.action = #selector(waterHighlightColorChanged(_:))
+        waterPrimaryColorWell.target = self
+        waterPrimaryColorWell.action = #selector(waterPrimaryColorChanged(_:))
+        waterShadowColorWell.target = self
+        waterShadowColorWell.action = #selector(waterShadowColorChanged(_:))
+        waterSplashColorWell.target = self
+        waterSplashColorWell.action = #selector(waterSplashColorChanged(_:))
         magnifierBorderColorWell.target = self
         magnifierBorderColorWell.action = #selector(magnifierBorderColorChanged(_:))
 
@@ -569,18 +760,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         speedBurstTypePopup.action = #selector(speedBurstTypeChanged(_:))
         speedBurstTypePopup.addItems(withTitles: SpeedBurstEffectType.allCases.map(\.title))
 
+        speedSurgeScaleModePopup.target = self
+        speedSurgeScaleModePopup.action = #selector(speedSurgeScaleModeChanged(_:))
+        speedSurgeScaleModePopup.addItems(withTitles: SpeedSurgeScaleMode.allCases.map(\.title))
+
         clickStylePopup.target = self
         clickStylePopup.action = #selector(clickVisualStyleChanged(_:))
         clickStylePopup.addItems(withTitles: ClickVisualStyle.allCases.map(\.title))
 
-        intensityPopup.target = self
-        intensityPopup.action = #selector(intensityChanged(_:))
-        intensityPopup.addItems(withTitles: EffectIntensityPreset.allCases.map(\.title))
-
         trailPresetPopup.target = self
         trailPresetPopup.action = #selector(trailPresetChanged(_:))
-        trailPresetPopup.addItems(withTitles: TrailPresetOption.allCases.map(\.title))
-        trailPresetPopup.selectItem(at: 0)
+        reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
+
+        presetManageButton.target = self
+        presetManageButton.action = #selector(openPresetManagerClicked(_:))
+        presetManageButton.bezelStyle = .rounded
+        presetManageButton.controlSize = .small
+        presetManageButton.title = i18n("button.preset.manage", "管理")
 
         languagePopup.target = self
         languagePopup.action = #selector(languageChanged(_:))
@@ -606,6 +802,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         openLogFolderButton.action = #selector(openLogFolder(_:))
         openLanguagePacksFolderButton.target = self
         openLanguagePacksFolderButton.action = #selector(openLanguagePacksFolder(_:))
+        waterMixSeedLockSwitch.target = self
+        waterMixSeedLockSwitch.action = #selector(waterMixSeedLockSwitchChanged(_:))
 
         magnifierShortcutHint.stringValue = i18n("hint.magnifier.shortcut", "点击录制后按下按键/鼠标键，按住即可触发放大镜。")
         openInputMonitoringSettingsButton.title = i18n("button.permission.inputMonitoring", "前往输入监控设置")
@@ -630,20 +828,92 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private func presetTitle(for option: TrailPresetOption) -> String {
+        switch option {
+        case .custom:
+            return i18n("preset.custom", "自定义")
+        case .thunderFirstForm:
+            return i18n("preset.thunderFirstForm", "雷之呼吸·壹之型")
+        case .waterFirstForm:
+            return i18n("preset.waterFirstForm", "水之呼吸·壹之型（夸张）")
+        case .userPreset(let id):
+            return customTrailPresets.first(where: { $0.id == id })?.name ?? i18n("preset.custom", "自定义")
+        }
+    }
+
+    private func reloadTrailPresetPopup(selecting option: TrailPresetOption?) {
+        customTrailPresets = AppSettings.loadCustomTrailPresets()
+        trailPresetOptions = [.custom, .thunderFirstForm, .waterFirstForm]
+        trailPresetOptions.append(contentsOf: customTrailPresets.map { .userPreset(id: $0.id) })
+
+        trailPresetPopup.removeAllItems()
+        trailPresetPopup.addItems(withTitles: trailPresetOptions.map(presetTitle(for:)))
+
+        let targetOption = option ?? selectedTrailPresetOption
+        if let index = trailPresetOptions.firstIndex(of: targetOption) {
+            trailPresetPopup.selectItem(at: index)
+            selectedTrailPresetOption = targetOption
+        } else {
+            trailPresetPopup.selectItem(at: 0)
+            selectedTrailPresetOption = .custom
+        }
+    }
+
+    private func promptPresetName(title: String, message: String, defaultValue: String = "", icon: NSImage? = nil) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        if let icon {
+            alert.icon = icon
+        }
+        alert.addButton(withTitle: i18n("button.confirm", "确定"))
+        alert.addButton(withTitle: i18n("button.cancel", "取消"))
+
+        let input = NSTextField(string: defaultValue)
+        input.placeholderString = i18n("placeholder.preset.name", "请输入预设名称")
+        input.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        alert.accessoryView = input
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
     private func configureSliders() {
         configureSlider(trailWidthSlider, min: 0.1, max: 100, value: 2.2, action: #selector(trailWidthSliderChanged(_:)))
         configureSlider(trailLengthSlider, min: 1, max: 10_000, value: 650, action: #selector(trailLengthSliderChanged(_:)))
         configureSlider(speedBurstVelocitySlider, min: 100, max: 60_000, value: 1800, action: #selector(speedBurstVelocitySliderChanged(_:)))
         configureSlider(speedBurstCooldownSlider, min: 50, max: 3000, value: 450, action: #selector(speedBurstCooldownSliderChanged(_:)))
         configureSlider(speedBurstDurationSlider, min: 40, max: 800, value: 450, action: #selector(speedBurstDurationSliderChanged(_:)))
+        configureSlider(speedBurstDurationMinSlider, min: 40, max: 800, value: 120, action: #selector(speedBurstDurationMinSliderChanged(_:)))
+        configureSlider(speedBurstDurationMaxSlider, min: 40, max: 800, value: 320, action: #selector(speedBurstDurationMaxSliderChanged(_:)))
         configureSlider(speedBurstJitterSlider, min: 0, max: 30, value: 5, action: #selector(speedBurstJitterSliderChanged(_:)))
         configureSlider(speedBurstMinLengthSlider, min: 10, max: 5000, value: 110, action: #selector(speedBurstMinLengthSliderChanged(_:)))
         configureSlider(speedBurstMaxLengthSlider, min: 10, max: 5000, value: 220, action: #selector(speedBurstMaxLengthSliderChanged(_:)))
         configureSlider(speedBurstWidthMultiplierSlider, min: 0.2, max: 4.0, value: 1.55, action: #selector(speedBurstWidthMultiplierSliderChanged(_:)))
+        configureSlider(speedBurstTrailMinScaleSlider, min: 0.1, max: 10.0, value: 1.1, action: #selector(speedBurstTrailMinScaleSliderChanged(_:)))
+        configureSlider(speedBurstTrailMaxScaleSlider, min: 0.1, max: 10.0, value: 1.9, action: #selector(speedBurstTrailMaxScaleSliderChanged(_:)))
+        configureSlider(speedBurstEffectMinScaleSlider, min: 0.1, max: 10.0, value: 1.1, action: #selector(speedBurstEffectMinScaleSliderChanged(_:)))
+        configureSlider(speedBurstEffectMaxScaleSlider, min: 0.1, max: 10.0, value: 2.0, action: #selector(speedBurstEffectMaxScaleSliderChanged(_:)))
         configureSlider(speedBurstAccentDurationSlider, min: 40, max: 2000, value: 190, action: #selector(speedBurstAccentDurationSliderChanged(_:)))
         configureSlider(speedBurstAccentSizeSlider, min: 4, max: 400, value: 32, action: #selector(speedBurstAccentSizeSliderChanged(_:)))
+        configureSlider(waterHighlightRatioSlider, min: 0, max: 100, value: 22, action: #selector(waterHighlightRatioSliderChanged(_:)))
+        configureSlider(waterPrimaryRatioSlider, min: 0, max: 100, value: 56, action: #selector(waterPrimaryRatioSliderChanged(_:)))
+        configureSlider(waterShadowRatioSlider, min: 0, max: 100, value: 22, action: #selector(waterShadowRatioSliderChanged(_:)))
+        configureSlider(waterMixRandomnessSlider, min: 0, max: 100, value: 58, action: #selector(waterMixRandomnessSliderChanged(_:)))
+        configureSlider(waterSplashSizeSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterSplashSizeSliderChanged(_:)))
+        configureSlider(waterSplashSpeedSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterSplashSpeedSliderChanged(_:)))
+        configureSlider(waterSplashLifetimeSlider, min: 40, max: 2000, value: 260, action: #selector(waterSplashLifetimeSliderChanged(_:)))
+        configureSlider(waterSplashDensitySlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterSplashDensitySliderChanged(_:)))
+        configureSlider(trailEffectIntensitySlider, min: 0, max: 100, value: 82, action: #selector(trailEffectIntensitySliderChanged(_:)))
         configureSlider(clickRadiusSlider, min: 1, max: 600, value: 24, action: #selector(clickRadiusSliderChanged(_:)))
         configureSlider(clickDurationSlider, min: 40, max: 2000, value: 300, action: #selector(clickDurationSliderChanged(_:)))
+        configureSlider(waterImpactDensitySlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterImpactDensitySliderChanged(_:)))
+        configureSlider(waterImpactSpreadSpeedSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterImpactSpreadSpeedSliderChanged(_:)))
+        configureSlider(waterImpactLifetimeSlider, min: 40, max: 2000, value: 320, action: #selector(waterImpactLifetimeSliderChanged(_:)))
+        configureSlider(waterImpactDropletSizeSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterImpactDropletSizeSliderChanged(_:)))
         configureSlider(magnifierRadiusSlider, min: 20, max: 1200, value: 120, action: #selector(magnifierRadiusSliderChanged(_:)))
         configureSlider(magnifierZoomSlider, min: 1.0, max: 8.0, value: 2.0, action: #selector(magnifierZoomSliderChanged(_:)))
         configureSlider(magnifierBorderWidthSlider, min: 0, max: 30, value: 3, action: #selector(magnifierBorderWidthSliderChanged(_:)))
@@ -662,14 +932,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func applyCompactControlSizes() {
         let switches: [NSSwitch] =
-            [launchAtLoginSwitch, loggingSwitch, statusItemSwitch, trackingSwitch, speedBurstSwitch, clickEffectsSwitch, magnifierEnabledSwitch, magnifierShowEffectsSwitch]
+            [launchAtLoginSwitch, loggingSwitch, statusItemSwitch, trackingSwitch, speedBurstSwitch, trailEffectsSwitch, clickEffectsSwitch, magnifierEnabledSwitch, magnifierShowEffectsSwitch, waterMixSeedLockSwitch]
             + Array(clickToggleButtons.values)
         for item in switches {
             item.controlSize = .mini
         }
 
         let colorWells: [NSColorWell] =
-            [trailColorWell, trailEffectColorWell, speedBurstLineColorWell, speedBurstAccentColorWell, neonPrimaryColorWell, neonSecondaryColorWell, magnifierBorderColorWell]
+            [trailColorWell, trailEffectColorWell, speedBurstLineColorWell, speedBurstAccentColorWell, neonPrimaryColorWell, neonSecondaryColorWell, waterHighlightColorWell, waterPrimaryColorWell, waterShadowColorWell, waterSplashColorWell, magnifierBorderColorWell]
             + Array(clickColorWells.values)
             + rainbowColorWells
         for colorWell in colorWells {
@@ -705,13 +975,34 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                 makeSwitchRow(title: i18n("row.tracking.title", "开启轨迹"), subtitle: i18n("row.tracking.subtitle", "关闭后不再绘制轨迹"), toggle: trackingSwitch),
                 trailTypeRow,
                 trailColorRow,
+                waterColorsRow,
+                waterHighlightRatioRow,
+                waterPrimaryRatioRow,
+                waterShadowRatioRow,
+                waterMixRandomnessRow,
+                waterMixSeedLockRow,
                 neonColorsRow,
                 rainbowColorsRow,
-                trailEffectTypeRow,
-                trailEffectColorRow,
                 trailWidthRow,
                 trailLengthRow,
-                trailIntensityRow,
+            ]
+        )
+    }
+
+    private func buildTrailEffectSection() -> NSView {
+        return makeSectionCard(
+            title: i18n("section.trailEffect.title", "特效"),
+            subtitle: i18n("section.trailEffect.subtitle", "轨迹附加特效类型与相关参数"),
+            rows: [
+                trailEffectsEnabledRow,
+                trailEffectIntensityRow,
+                trailEffectTypeRow,
+                waterSplashSizeRow,
+                waterSplashSpeedRow,
+                waterSplashLifetimeRow,
+                waterSplashDensityRow,
+                waterSplashColorRow,
+                trailEffectColorRow,
             ]
         )
     }
@@ -721,18 +1012,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             title: i18n("section.speedBurst.title", "加速爆发"),
             subtitle: i18n("section.speedBurst.subtitle", "高速移动触发的额外爆发特效"),
             rows: [
-                makeSwitchRow(title: i18n("row.speedBurst.enabled", "开启加速爆发"), subtitle: i18n("row.speedBurst.enabled.subtitle", "关闭后将不触发一之闪"), toggle: speedBurstSwitch),
+                makeSwitchRow(title: i18n("row.speedBurst.enabled", "开启加速爆发"), subtitle: i18n("row.speedBurst.enabled.subtitle", "关闭后将不触发任何加速爆发特效"), toggle: speedBurstSwitch),
                 speedBurstTypeRow,
                 speedBurstVelocityRow,
                 speedBurstCooldownRow,
+                speedSurgeScaleModeRow,
                 speedBurstAccentColorRow,
                 speedBurstAccentDurationRow,
                 speedBurstAccentSizeRow,
                 speedBurstLineColorRow,
                 speedBurstDurationRow,
+                speedBurstDurationMinRow,
+                speedBurstDurationMaxRow,
                 speedBurstMinLengthRow,
                 speedBurstMaxLengthRow,
                 speedBurstWidthMultiplierRow,
+                speedBurstTrailMinScaleRow,
+                speedBurstTrailMaxScaleRow,
+                speedBurstEffectMinScaleRow,
+                speedBurstEffectMaxScaleRow,
                 speedBurstJitterRow,
             ]
         )
@@ -742,8 +1040,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         var rows: [NSView] = [
             makeSwitchRow(title: i18n("row.click.enabled", "开启点击效果"), subtitle: i18n("row.click.enabled.subtitle", "关闭后不显示点击特效"), toggle: clickEffectsSwitch),
             makePopupRow(title: i18n("row.click.style", "点击样式"), popup: clickStylePopup),
-            makeSliderRow(title: i18n("row.click.radius", "点击效果半径"), slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel),
+            clickRadiusRow,
             clickDurationRow,
+            waterImpactDensityRow,
+            waterImpactSpreadSpeedRow,
+            waterImpactLifetimeRow,
+            waterImpactDropletSizeRow,
         ]
 
         for button in MouseButtonKind.allCases {
@@ -809,10 +1111,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         label.textColor = .secondaryLabelColor
         label.setContentHuggingPriority(.required, for: .horizontal)
 
+        trailPresetPopup.controlSize = .small
         trailPresetPopup.translatesAutoresizingMaskIntoConstraints = false
         trailPresetPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 148).isActive = true
 
-        let stack = NSStackView(views: [label, trailPresetPopup])
+        let controlRow = NSStackView(views: [trailPresetPopup, presetManageButton])
+        controlRow.orientation = .horizontal
+        controlRow.alignment = .centerY
+        controlRow.spacing = 4
+        controlRow.setCustomSpacing(8, after: trailPresetPopup)
+
+        let stack = NSStackView(views: [label, controlRow])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
@@ -990,6 +1299,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return row
     }
 
+    private func makeWaterColorsRow() -> NSView {
+        let label = NSTextField(labelWithString: i18n("row.trail.waterColors", "水刃三色"))
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        let highlight = labeledColorWell(i18n("row.trail.waterHighlight", "高光"), colorWell: waterHighlightColorWell)
+        let primary = labeledColorWell(i18n("row.trail.waterPrimary", "主色"), colorWell: waterPrimaryColorWell)
+        let shadow = labeledColorWell(i18n("row.trail.waterShadow", "阴影"), colorWell: waterShadowColorWell)
+        let colors = NSStackView(views: [highlight, primary, shadow])
+        colors.orientation = .horizontal
+        colors.alignment = .centerY
+        colors.spacing = 8
+        let row = NSStackView(views: [label, NSView(), colors])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
     private func labeledColorWell(_ title: String, colorWell: NSColorWell) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 11)
@@ -1111,15 +1438,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func syncControlsFromSettings() {
         isSyncingControls = true
         window?.title = i18n("window.settings.title", "CursorTrailBar 设置")
+        presetManageButton.title = i18n("button.preset.manage", "管理")
+        reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
 
         launchAtLoginSwitch.state = settings.isLaunchAtLoginEnabled ? .on : .off
         loggingSwitch.state = settings.isLoggingEnabled ? .on : .off
         statusItemSwitch.state = settings.isStatusItemVisible ? .on : .off
         trackingSwitch.state = settings.isTrackingEnabled ? .on : .off
         speedBurstSwitch.state = settings.speedBurstEnabled ? .on : .off
+        trailEffectsSwitch.state = settings.isTrailEffectsEnabled ? .on : .off
         clickEffectsSwitch.state = settings.isClickEffectsEnabled ? .on : .off
         magnifierEnabledSwitch.state = settings.isMagnifierEnabled ? .on : .off
         magnifierShowEffectsSwitch.state = settings.showTrailEffectsWhileMagnifierActive ? .on : .off
+        waterMixSeedLockSwitch.state = settings.waterMixSeedLocked ? .on : .off
 
         trailColorWell.color = settings.trailColor
         trailEffectColorWell.color = settings.trailEffectColor
@@ -1127,6 +1458,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         speedBurstAccentColorWell.color = settings.speedBurstAccentColor
         neonPrimaryColorWell.color = settings.neonPrimaryColor
         neonSecondaryColorWell.color = settings.neonSecondaryColor
+        waterHighlightColorWell.color = settings.waterHighlightColor
+        waterPrimaryColorWell.color = settings.waterPrimaryColor
+        waterShadowColorWell.color = settings.waterShadowColor
+        waterSplashColorWell.color = settings.waterSplashColor
         magnifierBorderColorWell.color = settings.magnifierBorderColor
         for index in rainbowColorWells.indices {
             let color = settings.rainbowTrailColors.indices.contains(index)
@@ -1140,14 +1475,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         speedBurstVelocitySlider.doubleValue = settings.speedBurstVelocityThreshold
         speedBurstCooldownSlider.doubleValue = settings.speedBurstCooldownMilliseconds
         speedBurstDurationSlider.doubleValue = settings.speedBurstDurationMilliseconds
+        speedBurstDurationMinSlider.doubleValue = settings.speedBurstDurationMinMilliseconds
+        speedBurstDurationMaxSlider.doubleValue = settings.speedBurstDurationMaxMilliseconds
         speedBurstJitterSlider.doubleValue = settings.speedBurstJitterAmplitude
         speedBurstMinLengthSlider.doubleValue = settings.speedBurstMinLength
         speedBurstMaxLengthSlider.doubleValue = settings.speedBurstMaxLength
         speedBurstWidthMultiplierSlider.doubleValue = settings.speedBurstWidthMultiplier
+        speedBurstTrailMinScaleSlider.doubleValue = settings.speedBurstTrailMinScale
+        speedBurstTrailMaxScaleSlider.doubleValue = settings.speedBurstTrailMaxScale
+        speedBurstEffectMinScaleSlider.doubleValue = settings.speedBurstEffectMinScale
+        speedBurstEffectMaxScaleSlider.doubleValue = settings.speedBurstEffectMaxScale
         speedBurstAccentDurationSlider.doubleValue = settings.speedBurstAccentDurationMilliseconds
         speedBurstAccentSizeSlider.doubleValue = settings.speedBurstAccentSize
+        waterHighlightRatioSlider.doubleValue = settings.waterHighlightRatio
+        waterPrimaryRatioSlider.doubleValue = settings.waterPrimaryRatio
+        waterShadowRatioSlider.doubleValue = settings.waterShadowRatio
+        waterMixRandomnessSlider.doubleValue = settings.waterMixRandomness
+        waterSplashSizeSlider.doubleValue = settings.waterSplashSize
+        waterSplashSpeedSlider.doubleValue = settings.waterSplashSpeed
+        waterSplashLifetimeSlider.doubleValue = settings.waterSplashLifetimeMilliseconds
+        waterSplashDensitySlider.doubleValue = settings.waterSplashDensity
+        trailEffectIntensitySlider.doubleValue = settings.trailEffectIntensity
         clickRadiusSlider.doubleValue = settings.clickEffectRadius
         clickDurationSlider.doubleValue = settings.clickEffectDurationMilliseconds
+        waterImpactDensitySlider.doubleValue = settings.waterImpactDropletDensity
+        waterImpactSpreadSpeedSlider.doubleValue = settings.waterImpactSpreadSpeed
+        waterImpactLifetimeSlider.doubleValue = settings.waterImpactLifetimeMilliseconds
+        waterImpactDropletSizeSlider.doubleValue = settings.waterImpactDropletSize
         magnifierRadiusSlider.doubleValue = settings.magnifierRadius
         magnifierZoomSlider.doubleValue = settings.magnifierZoom
         magnifierBorderWidthSlider.doubleValue = settings.magnifierBorderWidth
@@ -1155,9 +1509,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         updateSliderValueLabels()
 
-        if let index = EffectIntensityPreset.allCases.firstIndex(of: settings.intensityPreset) {
-            intensityPopup.selectItem(at: index)
-        }
         if let index = TrailRenderStyle.allCases.firstIndex(of: settings.trailStyle) {
             trailStylePopup.selectItem(at: index)
         }
@@ -1166,6 +1517,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         if let index = SpeedBurstEffectType.allCases.firstIndex(of: settings.speedBurstType) {
             speedBurstTypePopup.selectItem(at: index)
+        }
+        if let index = SpeedSurgeScaleMode.allCases.firstIndex(of: settings.speedSurgeScaleMode) {
+            speedSurgeScaleModePopup.selectItem(at: index)
         }
         if let index = ClickVisualStyle.allCases.firstIndex(of: settings.clickVisualStyle) {
             clickStylePopup.selectItem(at: index)
@@ -1187,6 +1541,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         updateToggleAvailability()
         refreshLaunchAtLoginHint()
+        if presetManagerPanel != nil {
+            reloadPresetManagerRows()
+        }
         isSyncingControls = false
         refreshPermissionIndicators()
     }
@@ -1208,9 +1565,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func updateToggleAvailability() {
         let clickEnabled = settings.isClickEffectsEnabled
-        clickRadiusSlider.isEnabled = clickEnabled
-        clickDurationSlider.isEnabled = clickEnabled
+        let isWaterImpactClick = settings.clickVisualStyle == .waterImpact
+        clickRadiusSlider.isEnabled = clickEnabled && !isWaterImpactClick
+        clickDurationSlider.isEnabled = clickEnabled && !isWaterImpactClick
+        waterImpactDensitySlider.isEnabled = clickEnabled && isWaterImpactClick
+        waterImpactSpreadSpeedSlider.isEnabled = clickEnabled && isWaterImpactClick
+        waterImpactLifetimeSlider.isEnabled = clickEnabled && isWaterImpactClick
+        waterImpactDropletSizeSlider.isEnabled = clickEnabled && isWaterImpactClick
         clickStylePopup.isEnabled = clickEnabled
+        setRowVisibility(clickRadiusRow, isVisible: !isWaterImpactClick)
+        setRowVisibility(clickDurationRow, isVisible: !isWaterImpactClick)
+        setRowVisibility(waterImpactDensityRow, isVisible: isWaterImpactClick)
+        setRowVisibility(waterImpactSpreadSpeedRow, isVisible: isWaterImpactClick)
+        setRowVisibility(waterImpactLifetimeRow, isVisible: isWaterImpactClick)
+        setRowVisibility(waterImpactDropletSizeRow, isVisible: isWaterImpactClick)
         for button in MouseButtonKind.allCases {
             let buttonEnabled = settings.effectStyle(for: button).isEnabled
             clickToggleButtons[button]?.isEnabled = clickEnabled
@@ -1219,35 +1587,85 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let rainbowEnabled = settings.trailStyle == .rainbow
         rainbowColorWells.forEach { $0.isEnabled = rainbowEnabled }
-        setRowVisibility(trailColorRow, isVisible: settings.trailStyle != .rainbow && settings.trailStyle != .neon)
+        let trailEffectsEnabled = settings.isTrailEffectsEnabled
+        trailEffectPopup.isEnabled = trailEffectsEnabled
+        trailEffectIntensitySlider.isEnabled = trailEffectsEnabled
+        let isWaterStyle = settings.trailStyle == .waterBlade
+        setRowVisibility(
+            trailColorRow,
+            isVisible: settings.trailStyle != .rainbow && settings.trailStyle != .neon && !isWaterStyle
+        )
         setRowVisibility(rainbowColorsRow, isVisible: settings.trailStyle == .rainbow)
         setRowVisibility(neonColorsRow, isVisible: settings.trailStyle == .neon)
+        setRowVisibility(waterColorsRow, isVisible: isWaterStyle)
+        setRowVisibility(waterHighlightRatioRow, isVisible: isWaterStyle)
+        setRowVisibility(waterPrimaryRatioRow, isVisible: isWaterStyle)
+        setRowVisibility(waterShadowRatioRow, isVisible: isWaterStyle)
+        setRowVisibility(waterMixRandomnessRow, isVisible: isWaterStyle)
+        setRowVisibility(waterMixSeedLockRow, isVisible: isWaterStyle)
+        waterHighlightColorWell.isEnabled = isWaterStyle
+        waterPrimaryColorWell.isEnabled = isWaterStyle
+        waterShadowColorWell.isEnabled = isWaterStyle
+        waterHighlightRatioSlider.isEnabled = isWaterStyle
+        waterPrimaryRatioSlider.isEnabled = isWaterStyle
+        waterShadowRatioSlider.isEnabled = isWaterStyle
+        waterMixRandomnessSlider.isEnabled = isWaterStyle
+        waterMixSeedLockSwitch.isEnabled = isWaterStyle
+        let isWaterSplashEffect = settings.trailEffectStyle == .waterSplash
+        setRowVisibility(trailEffectColorRow, isVisible: !isWaterSplashEffect)
+        trailEffectColorWell.isEnabled = trailEffectsEnabled && !isWaterSplashEffect
+        setRowVisibility(waterSplashSizeRow, isVisible: isWaterSplashEffect)
+        setRowVisibility(waterSplashSpeedRow, isVisible: isWaterSplashEffect)
+        setRowVisibility(waterSplashLifetimeRow, isVisible: isWaterSplashEffect)
+        setRowVisibility(waterSplashDensityRow, isVisible: isWaterSplashEffect)
+        setRowVisibility(waterSplashColorRow, isVisible: isWaterSplashEffect)
+        waterSplashSizeSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
+        waterSplashSpeedSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
+        waterSplashLifetimeSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
+        waterSplashDensitySlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
+        waterSplashColorWell.isEnabled = trailEffectsEnabled && isWaterSplashEffect
 
         let speedBurstEnabled = settings.speedBurstEnabled
+        let isFirstFlashBurst = settings.speedBurstType == .firstFlash
+        let isWaterSurgeBurst = settings.speedBurstType == .waterSurge
         speedBurstTypePopup.isEnabled = speedBurstEnabled
         speedBurstVelocitySlider.isEnabled = speedBurstEnabled
         speedBurstCooldownSlider.isEnabled = speedBurstEnabled
-        speedBurstDurationSlider.isEnabled = speedBurstEnabled
-        speedBurstJitterSlider.isEnabled = speedBurstEnabled
-        speedBurstMinLengthSlider.isEnabled = speedBurstEnabled
-        speedBurstMaxLengthSlider.isEnabled = speedBurstEnabled
-        speedBurstWidthMultiplierSlider.isEnabled = speedBurstEnabled
-        speedBurstAccentDurationSlider.isEnabled = speedBurstEnabled
-        speedBurstAccentSizeSlider.isEnabled = speedBurstEnabled
-        speedBurstLineColorWell.isEnabled = speedBurstEnabled
-        speedBurstAccentColorWell.isEnabled = speedBurstEnabled
+        speedBurstDurationSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedSurgeScaleModePopup.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstDurationMinSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstDurationMaxSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstJitterSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstMinLengthSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstMaxLengthSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstWidthMultiplierSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstTrailMinScaleSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstTrailMaxScaleSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstEffectMinScaleSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstEffectMaxScaleSlider.isEnabled = speedBurstEnabled && isWaterSurgeBurst
+        speedBurstAccentDurationSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstAccentSizeSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstLineColorWell.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        speedBurstAccentColorWell.isEnabled = speedBurstEnabled && isFirstFlashBurst
         setRowVisibility(speedBurstTypeRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstLineColorRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstAccentColorRow, isVisible: speedBurstEnabled)
+        setRowVisibility(speedBurstLineColorRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstAccentColorRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
         setRowVisibility(speedBurstVelocityRow, isVisible: speedBurstEnabled)
         setRowVisibility(speedBurstCooldownRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstDurationRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstAccentDurationRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstAccentSizeRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstJitterRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstMinLengthRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstMaxLengthRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstWidthMultiplierRow, isVisible: speedBurstEnabled)
+        setRowVisibility(speedSurgeScaleModeRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstDurationRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstDurationMinRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstDurationMaxRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstAccentDurationRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstAccentSizeRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstJitterRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstMinLengthRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstMaxLengthRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstWidthMultiplierRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
+        setRowVisibility(speedBurstTrailMinScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstTrailMaxScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstEffectMinScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        setRowVisibility(speedBurstEffectMaxScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
 
         let magnifierEnabled = settings.isMagnifierEnabled
         magnifierShowEffectsSwitch.isEnabled = magnifierEnabled
@@ -1265,19 +1683,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let ms = i18n("unit.ms", "ms")
         let pxps = i18n("unit.pxps", "px/s")
         let multiplier = i18n("unit.multiplier", "x")
+        let percent = i18n("unit.percent", "%")
         trailWidthValueLabel.stringValue = "\(rounded(Double(settings.trailWidth))) \(px)"
         trailLengthValueLabel.stringValue = "\(Int(settings.trailLengthMilliseconds)) \(ms)"
         speedBurstVelocityValueLabel.stringValue = "\(Int(settings.speedBurstVelocityThreshold)) \(pxps)"
         speedBurstCooldownValueLabel.stringValue = "\(Int(settings.speedBurstCooldownMilliseconds)) \(ms)"
         speedBurstDurationValueLabel.stringValue = "\(Int(settings.speedBurstDurationMilliseconds)) \(ms)"
+        speedBurstDurationMinValueLabel.stringValue = "\(Int(settings.speedBurstDurationMinMilliseconds)) \(ms)"
+        speedBurstDurationMaxValueLabel.stringValue = "\(Int(settings.speedBurstDurationMaxMilliseconds)) \(ms)"
         speedBurstJitterValueLabel.stringValue = "\(rounded(Double(settings.speedBurstJitterAmplitude)))"
         speedBurstMinLengthValueLabel.stringValue = "\(Int(settings.speedBurstMinLength)) \(px)"
         speedBurstMaxLengthValueLabel.stringValue = "\(Int(settings.speedBurstMaxLength)) \(px)"
         speedBurstWidthMultiplierValueLabel.stringValue = "\(rounded(Double(settings.speedBurstWidthMultiplier))) \(multiplier)"
+        speedBurstTrailMinScaleValueLabel.stringValue = "\(rounded(Double(settings.speedBurstTrailMinScale))) \(multiplier)"
+        speedBurstTrailMaxScaleValueLabel.stringValue = "\(rounded(Double(settings.speedBurstTrailMaxScale))) \(multiplier)"
+        speedBurstEffectMinScaleValueLabel.stringValue = "\(rounded(Double(settings.speedBurstEffectMinScale))) \(multiplier)"
+        speedBurstEffectMaxScaleValueLabel.stringValue = "\(rounded(Double(settings.speedBurstEffectMaxScale))) \(multiplier)"
         speedBurstAccentDurationValueLabel.stringValue = "\(Int(settings.speedBurstAccentDurationMilliseconds)) \(ms)"
         speedBurstAccentSizeValueLabel.stringValue = "\(Int(settings.speedBurstAccentSize)) \(px)"
+        waterHighlightRatioValueLabel.stringValue = "\(Int(settings.waterHighlightRatio.rounded()))\(percent)"
+        waterPrimaryRatioValueLabel.stringValue = "\(Int(settings.waterPrimaryRatio.rounded()))\(percent)"
+        waterShadowRatioValueLabel.stringValue = "\(Int(settings.waterShadowRatio.rounded()))\(percent)"
+        waterMixRandomnessValueLabel.stringValue = "\(Int(settings.waterMixRandomness.rounded()))\(percent)"
+        waterSplashSizeValueLabel.stringValue = "\(rounded(Double(settings.waterSplashSize))) \(multiplier)"
+        waterSplashSpeedValueLabel.stringValue = "\(rounded(Double(settings.waterSplashSpeed))) \(multiplier)"
+        waterSplashLifetimeValueLabel.stringValue = "\(Int(settings.waterSplashLifetimeMilliseconds)) \(ms)"
+        waterSplashDensityValueLabel.stringValue = "\(rounded(Double(settings.waterSplashDensity))) \(multiplier)"
+        trailEffectIntensityValueLabel.stringValue = "\(Int(settings.trailEffectIntensity.rounded()))\(percent)"
         clickRadiusValueLabel.stringValue = "\(Int(settings.clickEffectRadius)) \(px)"
         clickDurationValueLabel.stringValue = "\(Int(settings.clickEffectDurationMilliseconds)) \(ms)"
+        waterImpactDensityValueLabel.stringValue = "\(rounded(Double(settings.waterImpactDropletDensity))) \(multiplier)"
+        waterImpactSpreadSpeedValueLabel.stringValue = "\(rounded(Double(settings.waterImpactSpreadSpeed))) \(multiplier)"
+        waterImpactLifetimeValueLabel.stringValue = "\(Int(settings.waterImpactLifetimeMilliseconds)) \(ms)"
+        waterImpactDropletSizeValueLabel.stringValue = "\(rounded(Double(settings.waterImpactDropletSize))) \(multiplier)"
         magnifierRadiusValueLabel.stringValue = "\(Int(settings.magnifierRadius)) \(px)"
         magnifierZoomValueLabel.stringValue = "\(rounded(Double(settings.magnifierZoom))) \(multiplier)"
         magnifierBorderWidthValueLabel.stringValue = "\(rounded(Double(settings.magnifierBorderWidth))) \(px)"
@@ -1324,6 +1762,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                 self.scrollContentToTop(scrollView)
             }
         }
+        publishChanges()
+    }
+
+    @objc
+    private func trailEffectsSwitchChanged(_ sender: NSSwitch) {
+        settings.isTrailEffectsEnabled = sender.state == .on
+        syncControlsFromSettings()
         publishChanges()
     }
 
@@ -1378,6 +1823,149 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
+    private func waterHighlightColorChanged(_ sender: NSColorWell) {
+        settings.waterHighlightColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func waterPrimaryColorChanged(_ sender: NSColorWell) {
+        settings.waterPrimaryColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func waterShadowColorChanged(_ sender: NSColorWell) {
+        settings.waterShadowColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func waterSplashColorChanged(_ sender: NSColorWell) {
+        settings.waterSplashColor = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func waterHighlightRatioSliderChanged(_ sender: NSSlider) {
+        applyWaterRatioChange(channel: .highlight, rawValue: sender.doubleValue)
+    }
+
+    @objc
+    private func waterPrimaryRatioSliderChanged(_ sender: NSSlider) {
+        applyWaterRatioChange(channel: .primary, rawValue: sender.doubleValue)
+    }
+
+    @objc
+    private func waterShadowRatioSliderChanged(_ sender: NSSlider) {
+        applyWaterRatioChange(channel: .shadow, rawValue: sender.doubleValue)
+    }
+
+    @objc
+    private func waterMixRandomnessSliderChanged(_ sender: NSSlider) {
+        settings.waterMixRandomness = clampWaterMixRandomness(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterSplashSizeSliderChanged(_ sender: NSSlider) {
+        settings.waterSplashSize = clampWaterSplashSize(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterSplashSpeedSliderChanged(_ sender: NSSlider) {
+        settings.waterSplashSpeed = clampWaterSplashSpeed(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterSplashLifetimeSliderChanged(_ sender: NSSlider) {
+        settings.waterSplashLifetimeMilliseconds = clampWaterSplashLifetimeMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterSplashDensitySliderChanged(_ sender: NSSlider) {
+        settings.waterSplashDensity = clampWaterSplashDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func trailEffectIntensitySliderChanged(_ sender: NSSlider) {
+        settings.trailEffectIntensity = clampTrailEffectIntensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterMixSeedLockSwitchChanged(_ sender: NSSwitch) {
+        settings.waterMixSeedLocked = sender.state == .on
+        publishChanges()
+    }
+
+    private enum WaterRatioChannel {
+        case highlight
+        case primary
+        case shadow
+    }
+
+    private func applyWaterRatioChange(channel: WaterRatioChannel, rawValue: Double) {
+        let changedValue = clampWaterMixRatio(rawValue)
+        var highlight = settings.waterHighlightRatio
+        var primary = settings.waterPrimaryRatio
+        var shadow = settings.waterShadowRatio
+
+        switch channel {
+        case .highlight:
+            highlight = changedValue
+            let remainder = max(0, 100 - highlight)
+            let sumOthers = primary + shadow
+            if sumOthers <= 0.0001 {
+                primary = remainder * 0.5
+                shadow = remainder * 0.5
+            } else {
+                primary = remainder * (primary / sumOthers)
+                shadow = remainder * (shadow / sumOthers)
+            }
+        case .primary:
+            primary = changedValue
+            let remainder = max(0, 100 - primary)
+            let sumOthers = highlight + shadow
+            if sumOthers <= 0.0001 {
+                highlight = remainder * 0.5
+                shadow = remainder * 0.5
+            } else {
+                highlight = remainder * (highlight / sumOthers)
+                shadow = remainder * (shadow / sumOthers)
+            }
+        case .shadow:
+            shadow = changedValue
+            let remainder = max(0, 100 - shadow)
+            let sumOthers = highlight + primary
+            if sumOthers <= 0.0001 {
+                highlight = remainder * 0.5
+                primary = remainder * 0.5
+            } else {
+                highlight = remainder * (highlight / sumOthers)
+                primary = remainder * (primary / sumOthers)
+            }
+        }
+
+        settings.waterHighlightRatio = clampWaterMixRatio(Double(highlight))
+        settings.waterPrimaryRatio = clampWaterMixRatio(Double(primary))
+        settings.waterShadowRatio = clampWaterMixRatio(Double(shadow))
+        settings.normalizeWaterMixRatios()
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
     private func trailStyleChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem
         guard TrailRenderStyle.allCases.indices.contains(index) else { return }
@@ -1391,6 +1979,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let index = sender.indexOfSelectedItem
         guard TrailEffectStyle.allCases.indices.contains(index) else { return }
         settings.trailEffectStyle = TrailEffectStyle.allCases[index]
+        syncControlsFromSettings()
         publishChanges()
     }
 
@@ -1399,6 +1988,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let index = sender.indexOfSelectedItem
         guard SpeedBurstEffectType.allCases.indices.contains(index) else { return }
         settings.speedBurstType = SpeedBurstEffectType.allCases[index]
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func speedSurgeScaleModeChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard SpeedSurgeScaleMode.allCases.indices.contains(index) else { return }
+        settings.speedSurgeScaleMode = SpeedSurgeScaleMode.allCases[index]
+        syncControlsFromSettings()
         publishChanges()
     }
 
@@ -1407,6 +2006,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let index = sender.indexOfSelectedItem
         guard ClickVisualStyle.allCases.indices.contains(index) else { return }
         settings.clickVisualStyle = ClickVisualStyle.allCases[index]
+        syncControlsFromSettings()
         publishChanges()
     }
 
@@ -1452,6 +2052,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
+    private func speedBurstDurationMinSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstDurationMinMilliseconds = clampSpeedBurstDurationMilliseconds(sender.doubleValue)
+        if settings.speedBurstDurationMaxMilliseconds < settings.speedBurstDurationMinMilliseconds {
+            settings.speedBurstDurationMaxMilliseconds = settings.speedBurstDurationMinMilliseconds
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func speedBurstDurationMaxSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstDurationMaxMilliseconds = clampSpeedBurstDurationMilliseconds(sender.doubleValue)
+        if settings.speedBurstDurationMaxMilliseconds < settings.speedBurstDurationMinMilliseconds {
+            settings.speedBurstDurationMinMilliseconds = settings.speedBurstDurationMaxMilliseconds
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
     private func speedBurstJitterSliderChanged(_ sender: NSSlider) {
         settings.speedBurstJitterAmplitude = clampSpeedBurstJitterAmplitude(sender.doubleValue)
         syncControlsFromSettings()
@@ -1486,6 +2106,46 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
+    private func speedBurstTrailMinScaleSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstTrailMinScale = clampSpeedSurgeTrailScale(sender.doubleValue)
+        if settings.speedBurstTrailMaxScale < settings.speedBurstTrailMinScale {
+            settings.speedBurstTrailMaxScale = settings.speedBurstTrailMinScale
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func speedBurstTrailMaxScaleSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstTrailMaxScale = clampSpeedSurgeTrailScale(sender.doubleValue)
+        if settings.speedBurstTrailMaxScale < settings.speedBurstTrailMinScale {
+            settings.speedBurstTrailMinScale = settings.speedBurstTrailMaxScale
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func speedBurstEffectMinScaleSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstEffectMinScale = clampSpeedSurgeEffectScale(sender.doubleValue)
+        if settings.speedBurstEffectMaxScale < settings.speedBurstEffectMinScale {
+            settings.speedBurstEffectMaxScale = settings.speedBurstEffectMinScale
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func speedBurstEffectMaxScaleSliderChanged(_ sender: NSSlider) {
+        settings.speedBurstEffectMaxScale = clampSpeedSurgeEffectScale(sender.doubleValue)
+        if settings.speedBurstEffectMaxScale < settings.speedBurstEffectMinScale {
+            settings.speedBurstEffectMinScale = settings.speedBurstEffectMaxScale
+        }
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
     private func speedBurstAccentDurationSliderChanged(_ sender: NSSlider) {
         settings.speedBurstAccentDurationMilliseconds = clampSpeedBurstAccentDurationMilliseconds(sender.doubleValue)
         syncControlsFromSettings()
@@ -1509,6 +2169,34 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc
     private func clickDurationSliderChanged(_ sender: NSSlider) {
         settings.clickEffectDurationMilliseconds = clampClickEffectDurationMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterImpactDensitySliderChanged(_ sender: NSSlider) {
+        settings.waterImpactDropletDensity = clampWaterImpactDropletDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterImpactSpreadSpeedSliderChanged(_ sender: NSSlider) {
+        settings.waterImpactSpreadSpeed = clampWaterImpactSpreadSpeed(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterImpactLifetimeSliderChanged(_ sender: NSSlider) {
+        settings.waterImpactLifetimeMilliseconds = clampWaterImpactLifetimeMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func waterImpactDropletSizeSliderChanged(_ sender: NSSlider) {
+        settings.waterImpactDropletSize = clampWaterImpactDropletSize(sender.doubleValue)
         syncControlsFromSettings()
         publishChanges()
     }
@@ -1548,18 +2236,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
-    private func intensityChanged(_ sender: NSPopUpButton) {
-        let index = sender.indexOfSelectedItem
-        guard EffectIntensityPreset.allCases.indices.contains(index) else { return }
-        settings.intensityPreset = EffectIntensityPreset.allCases[index]
-        publishChanges()
-    }
-
-    @objc
     private func trailPresetChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem
-        guard TrailPresetOption.allCases.indices.contains(index) else { return }
-        let option = TrailPresetOption.allCases[index]
+        guard trailPresetOptions.indices.contains(index) else { return }
+        applyPresetOption(trailPresetOptions[index], source: "settings popup")
+    }
+
+    private func applyPresetOption(_ option: TrailPresetOption, source: String) {
+        selectedTrailPresetOption = option
         switch option {
         case .custom:
             break
@@ -1567,7 +2251,420 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             settings.applyThunderFirstFormPreset()
             syncControlsFromSettings()
             publishChanges()
-            AppLogger.shared.log("thunder preset applied from settings popup")
+            AppLogger.shared.log("thunder preset applied from \(source)")
+        case .waterFirstForm:
+            settings.applyWaterFirstFormPreset()
+            syncControlsFromSettings()
+            publishChanges()
+            AppLogger.shared.log("water preset applied from \(source)")
+        case .userPreset(let id):
+            settings.applyCustomTrailPreset(id: id)
+            syncControlsFromSettings()
+            publishChanges()
+            AppLogger.shared.log("custom preset applied: \(id) from \(source)")
+        }
+        presetManagerTableView?.reloadData()
+    }
+
+    @objc
+    private func openPresetManagerClicked(_ sender: NSButton) {
+        presentPresetManager()
+    }
+
+    private func presentPresetManager() {
+        if presetManagerPanel == nil {
+            presetManagerPanel = makePresetManagerPanel()
+        }
+        reloadPresetManagerRows()
+        guard let panel = presetManagerPanel else { return }
+        if let sheetParent = panel.sheetParent {
+            sheetParent.makeKeyAndOrderFront(nil)
+            return
+        }
+        if let window {
+            window.beginSheet(panel)
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func reloadPresetManagerRows() {
+        customTrailPresets = AppSettings.loadCustomTrailPresets()
+        var rows: [PresetManagerRow] = [
+            PresetManagerRow(
+                kind: .thunderFirstForm,
+                name: i18n("preset.thunderFirstForm", "雷之呼吸·壹之型"),
+                updatedAt: AppSettings.thunderPresetUpdatedAt()
+            ),
+            PresetManagerRow(
+                kind: .waterFirstForm,
+                name: i18n("preset.waterFirstForm", "水之呼吸·壹之型（夸张）"),
+                updatedAt: AppSettings.waterPresetUpdatedAt()
+            ),
+        ]
+        rows.append(
+            contentsOf: customTrailPresets.map { preset in
+                PresetManagerRow(kind: .userPreset(id: preset.id), name: preset.name, updatedAt: preset.updatedAt)
+            }
+        )
+        presetManagerRows = rows
+        presetManagerTableView?.reloadData()
+    }
+
+    private func presetOption(for kind: PresetManagerRowKind) -> TrailPresetOption {
+        switch kind {
+        case .thunderFirstForm:
+            .thunderFirstForm
+        case .waterFirstForm:
+            .waterFirstForm
+        case .userPreset(let id):
+            .userPreset(id: id)
+        }
+    }
+
+    private func rowKind(for row: Int) -> PresetManagerRowKind? {
+        guard presetManagerRows.indices.contains(row) else { return nil }
+        return presetManagerRows[row].kind
+    }
+
+    private func updatePreset(kind: PresetManagerRowKind) {
+        switch kind {
+        case .thunderFirstForm:
+            settings.saveAsThunderFirstFormPreset()
+            AppLogger.shared.log("thunder preset updated from manager")
+        case .waterFirstForm:
+            settings.saveAsWaterFirstFormPreset()
+            AppLogger.shared.log("water preset updated from manager")
+        case .userPreset(let id):
+            settings.updateCustomTrailPreset(id: id)
+            AppLogger.shared.log("custom preset updated from manager: \(id)")
+        }
+        reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
+        reloadPresetManagerRows()
+    }
+
+    private func addPreset() {
+        let addIcon = NSImage(systemSymbolName: "doc.fill", accessibilityDescription: nil)
+        guard let name = promptPresetName(
+            title: i18n("dialog.preset.add.title", "新增预设"),
+            message: i18n("dialog.preset.add.message", "请输入新预设名称"),
+            icon: addIcon
+        ) else { return }
+        let preset = settings.createCustomTrailPreset(named: name)
+        selectedTrailPresetOption = .userPreset(id: preset.id)
+        reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
+        reloadPresetManagerRows()
+        AppLogger.shared.log("custom preset created from manager: \(preset.id)")
+    }
+
+    private func renamePreset(id: String) {
+        guard let old = customTrailPresets.first(where: { $0.id == id }),
+              let name = promptPresetName(
+                  title: i18n("dialog.preset.rename.title", "重命名预设"),
+                  message: i18n("dialog.preset.rename.message", "请输入新的预设名称"),
+                  defaultValue: old.name
+              )
+        else { return }
+        guard AppSettings.renameCustomTrailPreset(id: id, newName: name) else { return }
+        reloadTrailPresetPopup(selecting: .userPreset(id: id))
+        reloadPresetManagerRows()
+        AppLogger.shared.log("custom preset renamed from manager: \(id)")
+    }
+
+    private func deletePreset(id: String) {
+        if case .userPreset(let selectedId) = selectedTrailPresetOption, selectedId == id {
+            let alert = NSAlert()
+            alert.messageText = i18n("dialog.preset.inUse.title", "无法删除")
+            alert.informativeText = i18n("dialog.preset.inUse.message", "当前使用中的预设不允许删除，请先切换到其他预设。")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: i18n("button.confirm", "确定"))
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = i18n("dialog.preset.delete.title", "删除预设")
+        alert.informativeText = i18n("dialog.preset.delete.message", "确定要删除该自定义预设吗？")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: i18n("button.confirm", "确定"))
+        alert.addButton(withTitle: i18n("button.cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        AppSettings.deleteCustomTrailPreset(id: id)
+        reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
+        reloadPresetManagerRows()
+        AppLogger.shared.log("custom preset deleted from manager: \(id)")
+    }
+
+    private func exportPreset(kind: PresetManagerRowKind) {
+        let data: Data?
+        let fileName: String
+        switch kind {
+        case .thunderFirstForm:
+            data = AppSettings.exportThunderPresetJSON()
+            fileName = "thunder-first-form"
+        case .waterFirstForm:
+            data = AppSettings.exportWaterPresetJSON()
+            fileName = "water-first-form"
+        case .userPreset(let id):
+            data = AppSettings.exportCustomPresetJSON(id: id)
+            let presetName = customTrailPresets.first(where: { $0.id == id })?.name ?? "preset"
+            fileName = presetName.replacingOccurrences(of: " ", with: "-")
+        }
+        guard let data else {
+            let alert = NSAlert()
+            alert.messageText = i18n("dialog.preset.export.empty.title", "导出失败")
+            alert.informativeText = i18n("dialog.preset.export.empty.message", "该预设暂无可导出的快照数据，请先更新该预设。")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: i18n("button.confirm", "确定"))
+            alert.runModal()
+            return
+        }
+        let panel = NSSavePanel()
+        if #available(macOS 12.0, *) {
+            panel.allowedContentTypes = [.json]
+        } else {
+            panel.allowedFileTypes = ["json"]
+        }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(fileName).json"
+        guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+        do {
+            try data.write(to: saveURL, options: .atomic)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func importPresetFromJSON() {
+        let panel = NSOpenPanel()
+        if #available(macOS 12.0, *) {
+            panel.allowedContentTypes = [.json]
+        } else {
+            panel.allowedFileTypes = ["json"]
+        }
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let fileURL = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let imported = try AppSettings.importCustomPresetJSON(data)
+            reloadTrailPresetPopup(selecting: .userPreset(id: imported.id))
+            applyPresetOption(.userPreset(id: imported.id), source: "preset manager import")
+            reloadPresetManagerRows()
+            AppLogger.shared.log("custom preset imported from manager: \(imported.id)")
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = i18n("dialog.preset.import.failed.title", "导入失败")
+            alert.informativeText = i18n("dialog.preset.import.failed.message", "JSON 文件格式无效或内容损坏。")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: i18n("button.confirm", "确定"))
+            alert.runModal()
+        }
+    }
+
+    private func makePresetManagerPanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 460),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = i18n("dialog.preset.manager.title", "预设管理")
+        panel.isReleasedWhenClosed = false
+
+        let addButton = NSButton(title: i18n("button.preset.add", "新增"), target: self, action: #selector(presetManagerAddClicked(_:)))
+        addButton.bezelStyle = .rounded
+        addButton.controlSize = .small
+        let importButton = NSButton(title: i18n("button.preset.import", "导入"), target: self, action: #selector(presetManagerImportClicked(_:)))
+        importButton.bezelStyle = .rounded
+        importButton.controlSize = .small
+        let closeButton = NSButton(title: i18n("button.close", "关闭"), target: self, action: #selector(presetManagerCloseClicked(_:)))
+        closeButton.bezelStyle = .rounded
+        closeButton.controlSize = .small
+
+        let topRow = NSStackView(views: [addButton, importButton, NSView()])
+        topRow.orientation = .horizontal
+        topRow.alignment = .centerY
+        topRow.spacing = 6
+
+        let tableView = NSTableView()
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.rowHeight = 36
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.selectionHighlightStyle = .none
+
+        let selectColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("select"))
+        selectColumn.title = i18n("column.preset.active", "启用")
+        selectColumn.width = 60
+        let nameColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        nameColumn.title = i18n("column.preset.name", "名称")
+        nameColumn.width = 210
+        let updatedColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("updatedAt"))
+        updatedColumn.title = i18n("column.preset.updatedAt", "最后更新时间")
+        updatedColumn.width = 180
+        let actionsColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("actions"))
+        actionsColumn.title = i18n("column.preset.actions", "操作")
+        actionsColumn.width = 280
+        tableView.addTableColumn(selectColumn)
+        tableView.addTableColumn(nameColumn)
+        tableView.addTableColumn(updatedColumn)
+        tableView.addTableColumn(actionsColumn)
+
+        let scrollView = NSScrollView()
+        scrollView.borderType = .bezelBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = tableView
+        presetManagerTableView = tableView
+
+        let bottomRow = NSStackView(views: [NSView(), closeButton])
+        bottomRow.orientation = .horizontal
+        bottomRow.alignment = .centerY
+        bottomRow.spacing = 6
+
+        let root = NSStackView(views: [topRow, scrollView, bottomRow])
+        root.orientation = .vertical
+        root.spacing = 14
+        root.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        panel.contentView = root
+        return panel
+    }
+
+    private func makeCenteredLabelCell(_ text: String) -> NSView {
+        let container = NSView()
+        let label = NSTextField(labelWithString: text)
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -2),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        return container
+    }
+
+    @objc
+    private func presetManagerCloseClicked(_ sender: NSButton) {
+        guard let panel = presetManagerPanel else { return }
+        if let parent = panel.sheetParent {
+            parent.endSheet(panel)
+        } else {
+            panel.orderOut(nil)
+        }
+    }
+
+    @objc
+    private func presetManagerAddClicked(_ sender: NSButton) {
+        addPreset()
+    }
+
+    @objc
+    private func presetManagerImportClicked(_ sender: NSButton) {
+        importPresetFromJSON()
+    }
+
+    @objc
+    private func presetManagerSelectClicked(_ sender: NSButton) {
+        guard let kind = rowKind(for: sender.tag) else { return }
+        applyPresetOption(presetOption(for: kind), source: "preset manager")
+    }
+
+    @objc
+    private func presetManagerUpdateClicked(_ sender: NSButton) {
+        guard let kind = rowKind(for: sender.tag) else { return }
+        updatePreset(kind: kind)
+    }
+
+    @objc
+    private func presetManagerRenameClicked(_ sender: NSButton) {
+        guard case .userPreset(let id) = rowKind(for: sender.tag) else { return }
+        renamePreset(id: id)
+    }
+
+    @objc
+    private func presetManagerDeleteClicked(_ sender: NSButton) {
+        guard case .userPreset(let id) = rowKind(for: sender.tag) else { return }
+        deletePreset(id: id)
+    }
+
+    @objc
+    private func presetManagerExportClicked(_ sender: NSButton) {
+        guard let kind = rowKind(for: sender.tag) else { return }
+        exportPreset(kind: kind)
+    }
+
+    private func formatPresetUpdatedAt(_ date: Date?) -> String {
+        guard let date else { return "-" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        if tableView === presetManagerTableView {
+            return presetManagerRows.count
+        }
+        return 0
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard tableView === presetManagerTableView,
+              presetManagerRows.indices.contains(row),
+              let columnIdentifier = tableColumn?.identifier.rawValue
+        else {
+            return nil
+        }
+        let rowModel = presetManagerRows[row]
+        switch columnIdentifier {
+        case "select":
+            let button = NSButton(radioButtonWithTitle: "", target: self, action: #selector(presetManagerSelectClicked(_:)))
+            button.tag = row
+            button.state = presetOption(for: rowModel.kind) == selectedTrailPresetOption ? .on : .off
+            return button
+        case "name":
+            return makeCenteredLabelCell(rowModel.name)
+        case "updatedAt":
+            return makeCenteredLabelCell(formatPresetUpdatedAt(rowModel.updatedAt))
+        case "actions":
+            let updateButton = NSButton(title: i18n("button.preset.save", "更新"), target: self, action: #selector(presetManagerUpdateClicked(_:)))
+            updateButton.bezelStyle = .rounded
+            updateButton.controlSize = .small
+            updateButton.tag = row
+
+            let renameButton = NSButton(title: i18n("button.preset.rename", "重命名"), target: self, action: #selector(presetManagerRenameClicked(_:)))
+            renameButton.bezelStyle = .rounded
+            renameButton.controlSize = .small
+            renameButton.tag = row
+
+            let deleteButton = NSButton(title: i18n("button.preset.delete", "删除"), target: self, action: #selector(presetManagerDeleteClicked(_:)))
+            deleteButton.bezelStyle = .rounded
+            deleteButton.controlSize = .small
+            deleteButton.tag = row
+
+            let exportButton = NSButton(title: i18n("button.preset.export", "导出"), target: self, action: #selector(presetManagerExportClicked(_:)))
+            exportButton.bezelStyle = .rounded
+            exportButton.controlSize = .small
+            exportButton.tag = row
+
+            if case .userPreset = rowModel.kind {
+                renameButton.isEnabled = true
+                deleteButton.isEnabled = presetOption(for: rowModel.kind) != selectedTrailPresetOption
+            } else {
+                renameButton.isEnabled = false
+                deleteButton.isEnabled = false
+            }
+
+            let stack = NSStackView(views: [updateButton, renameButton, deleteButton, exportButton])
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 4
+            return stack
+        default:
+            return nil
         }
     }
 

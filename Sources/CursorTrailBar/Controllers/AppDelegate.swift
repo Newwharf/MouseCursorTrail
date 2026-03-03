@@ -9,6 +9,7 @@ import ApplicationServices
 /// 应用主委托。
 /// 职责：串联监听器、覆盖层、设置窗口与状态栏菜单。
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let waterPresetSyncMigrationKey = "preset.water.synced.fromCurrent.v1"
     private let overlayManager = OverlayWindowManager()
     private let mouseMonitor = MouseMonitor()
     private let hotKeyManager = HotKeyManager()
@@ -38,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastAppliedLanguageCode = settings.languageCode
         setupKeyboardShortcutMenu()
         seedThunderPresetIfNeeded()
+        seedWaterPresetIfNeeded()
+        syncWaterPresetFromCurrentSettingsIfNeeded()
         AppLogger.shared.setEnabled(settings.isLoggingEnabled)
         AppLogger.shared.log("application did finish launching")
         let launchEnabled = launchAtLoginManager.isEnabled()
@@ -86,6 +89,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard defaults.bool(forKey: AppSettings.thunderPresetSeededKey) == false else { return }
         settings.saveAsThunderFirstFormPreset()
         AppLogger.shared.log("thunder preset snapshot saved from current settings")
+    }
+
+    private func seedWaterPresetIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: AppSettings.waterPresetSeededKey) == false else { return }
+        settings.saveAsWaterFirstFormPreset()
+        AppLogger.shared.log("water preset snapshot saved from current settings")
+    }
+
+    private func syncWaterPresetFromCurrentSettingsIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: waterPresetSyncMigrationKey) == false else { return }
+        settings.saveAsWaterFirstFormPreset()
+        defaults.set(true, forKey: waterPresetSyncMigrationKey)
+        AppLogger.shared.log("water preset synced from current settings (one-time migration)")
     }
 
     /// 应用退出前释放监听资源。
@@ -335,6 +353,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.trailLengthMilliseconds = clampTrailLengthMilliseconds(settings.trailLengthMilliseconds)
         settings.clickEffectRadius = clampClickEffectRadius(Double(settings.clickEffectRadius))
         settings.clickEffectDurationMilliseconds = clampClickEffectDurationMilliseconds(settings.clickEffectDurationMilliseconds)
+        settings.waterImpactDropletDensity = clampWaterImpactDropletDensity(Double(settings.waterImpactDropletDensity))
+        settings.waterImpactSpreadSpeed = clampWaterImpactSpreadSpeed(Double(settings.waterImpactSpreadSpeed))
+        settings.waterImpactLifetimeMilliseconds = clampWaterImpactLifetimeMilliseconds(settings.waterImpactLifetimeMilliseconds)
+        settings.waterImpactDropletSize = clampWaterImpactDropletSize(Double(settings.waterImpactDropletSize))
         settings.magnifierRadius = clampMagnifierRadius(Double(settings.magnifierRadius))
         settings.magnifierZoom = clampMagnifierZoom(Double(settings.magnifierZoom))
         settings.magnifierBorderWidth = clampMagnifierBorderWidth(Double(settings.magnifierBorderWidth))
@@ -342,6 +364,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.speedBurstVelocityThreshold = clampSpeedBurstVelocityThreshold(Double(settings.speedBurstVelocityThreshold))
         settings.speedBurstCooldownMilliseconds = clampSpeedBurstCooldownMilliseconds(settings.speedBurstCooldownMilliseconds)
         settings.speedBurstDurationMilliseconds = clampSpeedBurstDurationMilliseconds(settings.speedBurstDurationMilliseconds)
+        settings.speedBurstDurationMinMilliseconds = clampSpeedBurstDurationMilliseconds(settings.speedBurstDurationMinMilliseconds)
+        settings.speedBurstDurationMaxMilliseconds = clampSpeedBurstDurationMilliseconds(settings.speedBurstDurationMaxMilliseconds)
+        if settings.speedBurstDurationMaxMilliseconds < settings.speedBurstDurationMinMilliseconds {
+            let temp = settings.speedBurstDurationMaxMilliseconds
+            settings.speedBurstDurationMaxMilliseconds = settings.speedBurstDurationMinMilliseconds
+            settings.speedBurstDurationMinMilliseconds = temp
+        }
         settings.speedBurstAfterglowMilliseconds = 0
         settings.speedBurstJitterAmplitude = clampSpeedBurstJitterAmplitude(Double(settings.speedBurstJitterAmplitude))
         settings.speedBurstMinLength = clampSpeedBurstMinLength(Double(settings.speedBurstMinLength))
@@ -352,8 +381,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings.speedBurstMinLength = temp
         }
         settings.speedBurstWidthMultiplier = clampSpeedBurstWidthMultiplier(Double(settings.speedBurstWidthMultiplier))
+        settings.speedBurstTrailMinScale = clampSpeedSurgeTrailScale(Double(settings.speedBurstTrailMinScale))
+        settings.speedBurstTrailMaxScale = clampSpeedSurgeTrailScale(Double(settings.speedBurstTrailMaxScale))
+        if settings.speedBurstTrailMaxScale < settings.speedBurstTrailMinScale {
+            let temp = settings.speedBurstTrailMaxScale
+            settings.speedBurstTrailMaxScale = settings.speedBurstTrailMinScale
+            settings.speedBurstTrailMinScale = temp
+        }
+        settings.speedBurstEffectMinScale = clampSpeedSurgeEffectScale(Double(settings.speedBurstEffectMinScale))
+        settings.speedBurstEffectMaxScale = clampSpeedSurgeEffectScale(Double(settings.speedBurstEffectMaxScale))
+        if settings.speedBurstEffectMaxScale < settings.speedBurstEffectMinScale {
+            let temp = settings.speedBurstEffectMaxScale
+            settings.speedBurstEffectMaxScale = settings.speedBurstEffectMinScale
+            settings.speedBurstEffectMinScale = temp
+        }
         settings.speedBurstAccentDurationMilliseconds = clampSpeedBurstAccentDurationMilliseconds(settings.speedBurstAccentDurationMilliseconds)
         settings.speedBurstAccentSize = clampSpeedBurstAccentSize(Double(settings.speedBurstAccentSize))
+        settings.waterHighlightRatio = clampWaterMixRatio(Double(settings.waterHighlightRatio))
+        settings.waterPrimaryRatio = clampWaterMixRatio(Double(settings.waterPrimaryRatio))
+        settings.waterShadowRatio = clampWaterMixRatio(Double(settings.waterShadowRatio))
+        settings.waterMixRandomness = clampWaterMixRandomness(Double(settings.waterMixRandomness))
+        settings.waterSplashSize = clampWaterSplashSize(Double(settings.waterSplashSize))
+        settings.waterSplashSpeed = clampWaterSplashSpeed(Double(settings.waterSplashSpeed))
+        settings.waterSplashLifetimeMilliseconds = clampWaterSplashLifetimeMilliseconds(settings.waterSplashLifetimeMilliseconds)
+        settings.waterSplashDensity = clampWaterSplashDensity(Double(settings.waterSplashDensity))
+        settings.trailEffectIntensity = clampTrailEffectIntensity(Double(settings.trailEffectIntensity))
+        settings.normalizeWaterMixRatios()
         if settings.rainbowTrailColors.count < 2 {
             settings.rainbowTrailColors = AppSettings.default.rainbowTrailColors
         }
@@ -373,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if persist {
             settingsStore.saveSettings(settings)
-            AppLogger.shared.log("settings saved: tracking=\(settings.isTrackingEnabled), clickEffects=\(settings.isClickEffectsEnabled), magnifier=\(settings.isMagnifierEnabled), intensity=\(settings.intensityPreset.rawValue)")
+            AppLogger.shared.log("settings saved: tracking=\(settings.isTrackingEnabled), clickEffects=\(settings.isClickEffectsEnabled), magnifier=\(settings.isMagnifierEnabled), effectsEnabled=\(settings.isTrailEffectsEnabled), effectIntensity=\(Int(settings.trailEffectIntensity))")
         }
         if syncWindow {
             settingsWindowController?.updateSettings(settings)

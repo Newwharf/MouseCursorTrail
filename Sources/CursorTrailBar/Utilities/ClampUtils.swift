@@ -12,12 +12,56 @@ func clampTrailLengthMilliseconds(_ value: Double) -> Double {
     min(10_000, max(1, value))
 }
 
+func clampWaterMixRatio(_ value: Double) -> CGFloat {
+    CGFloat(min(100.0, max(0.0, value)))
+}
+
+func clampWaterMixRandomness(_ value: Double) -> CGFloat {
+    CGFloat(min(100.0, max(0.0, value)))
+}
+
+func clampWaterSplashSize(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampWaterSplashSpeed(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampWaterSplashLifetimeMilliseconds(_ value: Double) -> Double {
+    min(2_000.0, max(40.0, value))
+}
+
+func clampWaterSplashDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampTrailEffectIntensity(_ value: Double) -> CGFloat {
+    CGFloat(min(100.0, max(0.0, value)))
+}
+
 func clampClickEffectRadius(_ value: Double) -> CGFloat {
     CGFloat(min(600.0, max(1.0, value)))
 }
 
 func clampClickEffectDurationMilliseconds(_ value: Double) -> Double {
     min(2_000.0, max(40.0, value))
+}
+
+func clampWaterImpactDropletDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampWaterImpactSpreadSpeed(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampWaterImpactLifetimeMilliseconds(_ value: Double) -> Double {
+    min(2_000.0, max(40.0, value))
+}
+
+func clampWaterImpactDropletSize(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
 }
 
 func clampMagnifierRadius(_ value: Double) -> CGFloat {
@@ -62,6 +106,14 @@ func clampSpeedBurstMaxLength(_ value: Double) -> CGFloat {
 
 func clampSpeedBurstWidthMultiplier(_ value: Double) -> CGFloat {
     CGFloat(min(4.0, max(0.2, value)))
+}
+
+func clampSpeedSurgeTrailScale(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampSpeedSurgeEffectScale(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
 }
 
 func clampSpeedBurstAccentDurationMilliseconds(_ value: Double) -> Double {
