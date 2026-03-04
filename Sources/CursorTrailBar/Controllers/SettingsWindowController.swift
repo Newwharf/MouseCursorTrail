@@ -204,6 +204,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
     private var availableLanguageOptions: [LanguageOption] = []
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
+    private let aboutAuthorName = "lpp"
+    private let aboutAuthorEmail = "ez7268@126.com"
+    private let aboutAppVersion = "V 1.0.0"
     private lazy var trailPresetHeaderControl = makeTrailPresetHeaderControl()
 
     private lazy var trailTypeRow = makePopupRow(title: i18n("row.trail.type", "轨迹类型"), popup: trailStylePopup)
@@ -468,17 +471,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         ])
 
         let regularSection = buildRegularSection()
+        let aboutSection = buildAboutSection()
         let trailSection = buildTrailSection()
         let trailEffectSection = buildTrailEffectSection()
         let speedBurstSection = buildSpeedBurstSection()
         let clickSection = buildClickSection()
         let magnifierSection = buildMagnifierSection()
         let trailComposite = makeSidebarCompositeContent(sections: [trailSection, trailEffectSection, speedBurstSection])
+        let generalComposite = makeSidebarCompositeContent(sections: [regularSection, aboutSection])
         let contentsByTab: [(SidebarTab, NSView)] = [
             (.trailEffects, trailComposite),
             (.clickEffects, clickSection),
             (.magnifier, magnifierSection),
-            (.general, regularSection),
+            (.general, generalComposite),
         ]
 
         contentsByTab.forEach { tab, section in
@@ -833,9 +838,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         case .custom:
             return i18n("preset.custom", "自定义")
         case .thunderFirstForm:
-            return i18n("preset.thunderFirstForm", "雷之呼吸·壹之型")
+            return i18n("preset.thunderFirstForm", "雷之呼吸")
         case .waterFirstForm:
-            return i18n("preset.waterFirstForm", "水之呼吸·壹之型（夸张）")
+            return i18n("preset.waterFirstForm", "水之呼吸")
         case .userPreset(let id):
             return customTrailPresets.first(where: { $0.id == id })?.name ?? i18n("preset.custom", "自定义")
         }
@@ -962,6 +967,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 makeButtonRow(title: i18n("row.logFolder.title", "日志目录"), button: openLogFolderButton),
                 makeSwitchRow(title: i18n("row.statusItem.title", "菜单栏显示图标"), subtitle: i18n("row.statusItem.subtitle", "关闭后仅保留主界面与全局功能"), toggle: statusItemSwitch),
                 makeLanguageRow(),
+            ]
+        )
+    }
+
+    private func buildAboutSection() -> NSView {
+        return makeSectionCard(
+            title: i18n("section.about.title", "关于 Mouse cursor Trail"),
+            subtitle: i18n("section.about.subtitle", "作者与软件版本信息"),
+            rows: [
+                makeInfoRow(title: i18n("row.about.appName", "软件名称"), value: currentAppDisplayName()),
+                makeInfoRow(title: i18n("row.about.author", "作者名称"), value: aboutAuthorName),
+                makeInfoRow(title: i18n("row.about.email", "作者邮箱"), value: aboutAuthorEmail),
+                makeInfoRow(title: i18n("row.about.version", "软件版本号"), value: aboutAppVersion),
             ]
         )
     }
@@ -1384,6 +1402,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         row.distribution = .fill
         row.spacing = 8
         return row
+    }
+
+    private func makeInfoRow(title: String, value: String) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let valueLabel = NSTextField(labelWithString: value)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.lineBreakMode = .byTruncatingMiddle
+        valueLabel.setContentHuggingPriority(.required, for: .horizontal)
+        valueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let row = NSStackView(views: [label, NSView(), valueLabel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func currentAppDisplayName() -> String {
+        let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
+        let bundleName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let bundleName, !bundleName.isEmpty {
+            return bundleName
+        }
+        return "Mouse cursor Trail"
     }
 
     private func makeSliderRow(title: String, slider: NSSlider, valueLabel: NSTextField) -> NSView {
@@ -2293,12 +2344,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         var rows: [PresetManagerRow] = [
             PresetManagerRow(
                 kind: .thunderFirstForm,
-                name: i18n("preset.thunderFirstForm", "雷之呼吸·壹之型"),
+                name: i18n("preset.thunderFirstForm", "雷之呼吸"),
                 updatedAt: AppSettings.thunderPresetUpdatedAt()
             ),
             PresetManagerRow(
                 kind: .waterFirstForm,
-                name: i18n("preset.waterFirstForm", "水之呼吸·壹之型（夸张）"),
+                name: i18n("preset.waterFirstForm", "水之呼吸"),
                 updatedAt: AppSettings.waterPresetUpdatedAt()
             ),
         ]
