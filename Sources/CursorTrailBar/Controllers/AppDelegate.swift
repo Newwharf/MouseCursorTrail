@@ -9,7 +9,7 @@ import ApplicationServices
 /// 应用主委托。
 /// 职责：串联监听器、覆盖层、设置窗口与状态栏菜单。
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let waterPresetSyncMigrationKey = "preset.water.synced.fromCurrent.v1"
+    private let builtInPresetRepairV2Key = "preset.builtin.repair.v2"
     private let overlayManager = OverlayWindowManager()
     private let mouseMonitor = MouseMonitor()
     private let hotKeyManager = HotKeyManager()
@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupKeyboardShortcutMenu()
         seedThunderPresetIfNeeded()
         seedWaterPresetIfNeeded()
-        syncWaterPresetFromCurrentSettingsIfNeeded()
+        repairBuiltInPresetSnapshotsIfNeeded()
         AppLogger.shared.setEnabled(settings.isLoggingEnabled)
         AppLogger.shared.log("application did finish launching")
         let launchEnabled = launchAtLoginManager.isEnabled()
@@ -87,23 +87,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func seedThunderPresetIfNeeded() {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: AppSettings.thunderPresetSeededKey) == false else { return }
-        settings.saveAsThunderFirstFormPreset()
-        AppLogger.shared.log("thunder preset snapshot saved from current settings")
+        var preset = AppSettings.default
+        preset.applyThunderFirstFormPreset(applyStoredOverrides: false)
+        preset.saveAsThunderFirstFormPreset()
+        AppLogger.shared.log("thunder preset snapshot seeded from canonical preset")
     }
 
     private func seedWaterPresetIfNeeded() {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: AppSettings.waterPresetSeededKey) == false else { return }
-        settings.saveAsWaterFirstFormPreset()
-        AppLogger.shared.log("water preset snapshot saved from current settings")
+        var preset = AppSettings.default
+        preset.applyWaterFirstFormPreset(applyStoredOverrides: false)
+        preset.saveAsWaterFirstFormPreset()
+        AppLogger.shared.log("water preset snapshot seeded from canonical preset")
     }
 
-    private func syncWaterPresetFromCurrentSettingsIfNeeded() {
+    /// 修复历史版本误把“当前设置”写入内置预设快照导致的预设失效问题。
+    private func repairBuiltInPresetSnapshotsIfNeeded() {
         let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: waterPresetSyncMigrationKey) == false else { return }
-        settings.saveAsWaterFirstFormPreset()
-        defaults.set(true, forKey: waterPresetSyncMigrationKey)
-        AppLogger.shared.log("water preset synced from current settings (one-time migration)")
+        guard defaults.bool(forKey: builtInPresetRepairV2Key) == false else { return }
+        defer {
+            defaults.set(true, forKey: builtInPresetRepairV2Key)
+        }
+
+        let thunderStyle = defaults.string(forKey: "preset.thunder.trail.style")
+        let waterStyle = defaults.string(forKey: "preset.water.trail.style")
+        let thunderEffectStyle = defaults.string(forKey: "preset.thunder.trail.effectStyle")
+        let waterEffectStyle = defaults.string(forKey: "preset.water.trail.effectStyle")
+
+        let looksMirrored =
+            thunderStyle != nil &&
+                waterStyle != nil &&
+                thunderEffectStyle != nil &&
+                waterEffectStyle != nil &&
+                thunderStyle == waterStyle &&
+                thunderEffectStyle == waterEffectStyle
+        guard looksMirrored else { return }
+
+        var thunderPreset = AppSettings.default
+        thunderPreset.applyThunderFirstFormPreset(applyStoredOverrides: false)
+        thunderPreset.saveAsThunderFirstFormPreset()
+
+        var waterPreset = AppSettings.default
+        waterPreset.applyWaterFirstFormPreset(applyStoredOverrides: false)
+        waterPreset.saveAsWaterFirstFormPreset()
+
+        AppLogger.shared.log("built-in preset snapshots repaired from canonical presets")
     }
 
     /// 应用退出前释放监听资源。
@@ -269,6 +298,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func applyPreferredAppearance() {
+        let appearanceName: NSAppearance.Name = settings.prefersDarkAppearance ? .darkAqua : .aqua
+        let appearance = NSAppearance(named: appearanceName)
+        NSApp.appearance = appearance
+        settingsWindowController?.window?.appearance = appearance
+        settingsWindowController?.refreshAppearanceTheme()
+    }
+
     @objc
     private func toggleTracking() {
         settings.isTrackingEnabled.toggle()
@@ -289,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindowController = controller
         }
         settingsWindowController?.updateSettings(settings)
+        applyPreferredAppearance()
         settingsWindowController?.present()
     }
 
@@ -357,6 +395,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.waterImpactSpreadSpeed = clampWaterImpactSpreadSpeed(Double(settings.waterImpactSpreadSpeed))
         settings.waterImpactLifetimeMilliseconds = clampWaterImpactLifetimeMilliseconds(settings.waterImpactLifetimeMilliseconds)
         settings.waterImpactDropletSize = clampWaterImpactDropletSize(Double(settings.waterImpactDropletSize))
+        settings.clickParticleExplosionDensity = clampClickParticleExplosionDensity(Double(settings.clickParticleExplosionDensity))
+        settings.clickParticleExplosionSize = clampClickParticleExplosionSize(Double(settings.clickParticleExplosionSize))
+        settings.clickParticleExplosionLifetimeMilliseconds = clampClickParticleExplosionLifetimeMilliseconds(settings.clickParticleExplosionLifetimeMilliseconds)
+        settings.clickParticleExplosionSpeed = clampClickParticleExplosionSpeed(Double(settings.clickParticleExplosionSpeed))
         settings.magnifierRadius = clampMagnifierRadius(Double(settings.magnifierRadius))
         settings.magnifierZoom = clampMagnifierZoom(Double(settings.magnifierZoom))
         settings.magnifierBorderWidth = clampMagnifierBorderWidth(Double(settings.magnifierBorderWidth))
@@ -401,15 +443,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.waterPrimaryRatio = clampWaterMixRatio(Double(settings.waterPrimaryRatio))
         settings.waterShadowRatio = clampWaterMixRatio(Double(settings.waterShadowRatio))
         settings.waterMixRandomness = clampWaterMixRandomness(Double(settings.waterMixRandomness))
+        settings.neonPrimaryWidthRatio = clampNeonPrimaryWidthRatio(Double(settings.neonPrimaryWidthRatio))
         settings.waterSplashSize = clampWaterSplashSize(Double(settings.waterSplashSize))
         settings.waterSplashSpeed = clampWaterSplashSpeed(Double(settings.waterSplashSpeed))
         settings.waterSplashLifetimeMilliseconds = clampWaterSplashLifetimeMilliseconds(settings.waterSplashLifetimeMilliseconds)
         settings.waterSplashDensity = clampWaterSplashDensity(Double(settings.waterSplashDensity))
         settings.trailEffectIntensity = clampTrailEffectIntensity(Double(settings.trailEffectIntensity))
+        settings.electricArcDensity = clampElectricArcDensity(Double(settings.electricArcDensity))
+        settings.electricArcLength = clampElectricArcLength(Double(settings.electricArcLength))
+        settings.electricArcWidth = clampElectricArcWidth(Double(settings.electricArcWidth))
+        settings.inkDensity = clampInkDensity(Double(settings.inkDensity))
+        settings.inkSize = clampInkSize(Double(settings.inkSize))
+        settings.inkLifetimeMilliseconds = clampInkLifetimeMilliseconds(settings.inkLifetimeMilliseconds)
+        settings.particleDensity = clampParticleDensity(Double(settings.particleDensity))
+        settings.particleSize = clampParticleSize(Double(settings.particleSize))
+        settings.particleLifetimeMilliseconds = clampParticleLifetimeMilliseconds(settings.particleLifetimeMilliseconds)
+        settings.particleSpeed = clampParticleSpeed(Double(settings.particleSpeed))
         settings.normalizeWaterMixRatios()
+        settings.normalizeEffectStyleSettings()
         if settings.rainbowTrailColors.count < 2 {
             settings.rainbowTrailColors = AppSettings.default.rainbowTrailColors
         }
+        applyPreferredAppearance()
         syncLaunchAtLoginIfNeeded()
         syncStatusItemVisibility()
         overlayManager.setSettings(settings)
@@ -426,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if persist {
             settingsStore.saveSettings(settings)
-            AppLogger.shared.log("settings saved: tracking=\(settings.isTrackingEnabled), clickEffects=\(settings.isClickEffectsEnabled), magnifier=\(settings.isMagnifierEnabled), effectsEnabled=\(settings.isTrailEffectsEnabled), effectIntensity=\(Int(settings.trailEffectIntensity))")
+            AppLogger.shared.log("settings saved: tracking=\(settings.isTrackingEnabled), clickEffects=\(settings.isClickEffectsEnabled), magnifier=\(settings.isMagnifierEnabled), effectsEnabled=\(settings.isTrailEffectsEnabled), effectStyle=\(settings.trailEffectStyle.rawValue)")
         }
         if syncWindow {
             settingsWindowController?.updateSettings(settings)

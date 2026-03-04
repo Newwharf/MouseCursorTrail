@@ -13,6 +13,7 @@ final class SettingsStore {
     private let clickEffectsEnabledKey = "click.effects.enabled"
     private let magnifierEnabledKey = "magnifier.enabled"
     private let languageCodeKey = "app.language.code"
+    private let prefersDarkAppearanceKey = "app.appearance.dark"
     private let trailColorKey = "trail.color"
     private let trailEffectColorKey = "trail.effect.color"
     private let trailStyleKey = "trail.style"
@@ -20,6 +21,7 @@ final class SettingsStore {
     private let trailRainbowColorsKey = "trail.rainbow.colors"
     private let trailNeonPrimaryColorKey = "trail.neon.primary.color"
     private let trailNeonSecondaryColorKey = "trail.neon.secondary.color"
+    private let trailNeonPrimaryWidthRatioKey = "trail.neon.primaryWidthRatio"
     private let trailWaterHighlightColorKey = "trail.water.highlight.color"
     private let trailWaterPrimaryColorKey = "trail.water.primary.color"
     private let trailWaterShadowColorKey = "trail.water.shadow.color"
@@ -42,6 +44,11 @@ final class SettingsStore {
     private let clickWaterImpactSpreadSpeedKey = "click.waterImpact.spreadSpeed"
     private let clickWaterImpactLifetimeKey = "click.waterImpact.lifetime.ms"
     private let clickWaterImpactDropletSizeKey = "click.waterImpact.dropletSize"
+    private let clickParticleExplosionDensityKey = "click.particleExplosion.density"
+    private let clickParticleExplosionSizeKey = "click.particleExplosion.size"
+    private let clickParticleExplosionLifetimeKey = "click.particleExplosion.lifetime.ms"
+    private let clickParticleExplosionSpeedKey = "click.particleExplosion.speed"
+    private let clickParticleExplosionColorsKey = "click.particleExplosion.colors"
     private let magnifierRadiusKey = "magnifier.radius"
     private let magnifierZoomKey = "magnifier.zoom"
     private let magnifierBorderWidthKey = "magnifier.border.width"
@@ -53,8 +60,22 @@ final class SettingsStore {
     private let magnifierShortcutMouseButtonKey = "magnifier.shortcut.mouseButton"
     private let magnifierShortcutModifiersKey = "magnifier.shortcut.modifiers"
     private let trailEffectsEnabledKey = "trail.effects.enabled"
+    private let trailFadeDisableKey = "trail.fade.disable"
+    private let colorFadeDisabledKeysKey = "color.fade.disabled.keys"
     private let trailEffectIntensityKey = "trail.effect.intensity"
     private let trailIntensityKey = "trail.intensityPreset"
+    private let trailEffectElectricDensityKey = "trail.effect.electric.density"
+    private let trailEffectElectricLengthKey = "trail.effect.electric.length"
+    private let trailEffectElectricWidthKey = "trail.effect.electric.width"
+    private let trailEffectInkDensityKey = "trail.effect.ink.density"
+    private let trailEffectInkSizeKey = "trail.effect.ink.size"
+    private let trailEffectInkLifetimeKey = "trail.effect.ink.lifetime.ms"
+    private let trailEffectInkColorsKey = "trail.effect.ink.colors"
+    private let trailEffectParticleDensityKey = "trail.effect.particle.density"
+    private let trailEffectParticleSizeKey = "trail.effect.particle.size"
+    private let trailEffectParticleLifetimeKey = "trail.effect.particle.lifetime.ms"
+    private let trailEffectParticleSpeedKey = "trail.effect.particle.speed"
+    private let trailEffectParticleColorsKey = "trail.effect.particle.colors"
     private let speedBurstEnabledKey = "speedBurst.enabled"
     private let speedBurstTypeKey = "speedBurst.type"
     private let speedBurstVelocityThresholdKey = "speedBurst.velocityThreshold"
@@ -94,6 +115,7 @@ final class SettingsStore {
         let isClickEffectsEnabled = defaults.object(forKey: clickEffectsEnabledKey) as? Bool ?? fallback.isClickEffectsEnabled
         let isMagnifierEnabled = defaults.object(forKey: magnifierEnabledKey) as? Bool ?? fallback.isMagnifierEnabled
         let languageCode = defaults.string(forKey: languageCodeKey) ?? fallback.languageCode
+        let prefersDarkAppearance = defaults.object(forKey: prefersDarkAppearanceKey) as? Bool ?? fallback.prefersDarkAppearance
         let trailStyle = defaults
             .string(forKey: trailStyleKey)
             .flatMap(TrailRenderStyle.init(rawValue:))
@@ -106,9 +128,12 @@ final class SettingsStore {
             .string(forKey: clickVisualStyleKey)
             .flatMap(ClickVisualStyle.init(rawValue:))
             ?? fallback.clickVisualStyle
-        let rainbowTrailColors = decodeColorArray(defaults.array(forKey: trailRainbowColorsKey)) ?? fallback.rainbowTrailColors
+        let rainbowTrailColors = decodeColorArray(defaults.array(forKey: trailRainbowColorsKey), minCount: 2) ?? fallback.rainbowTrailColors
         let neonPrimaryColor = decodeColor(defaults.data(forKey: trailNeonPrimaryColorKey)) ?? fallback.neonPrimaryColor
         let neonSecondaryColor = decodeColor(defaults.data(forKey: trailNeonSecondaryColorKey)) ?? fallback.neonSecondaryColor
+        let neonPrimaryWidthRatio = clampNeonPrimaryWidthRatio(
+            defaults.object(forKey: trailNeonPrimaryWidthRatioKey) as? Double ?? fallback.neonPrimaryWidthRatio
+        )
         let waterHighlightColor = decodeColor(defaults.data(forKey: trailWaterHighlightColorKey)) ?? fallback.waterHighlightColor
         let waterPrimaryColor = decodeColor(defaults.data(forKey: trailWaterPrimaryColorKey)) ?? fallback.waterPrimaryColor
         let waterShadowColor = decodeColor(defaults.data(forKey: trailWaterShadowColorKey)) ?? fallback.waterShadowColor
@@ -160,6 +185,20 @@ final class SettingsStore {
         let waterImpactDropletSize = clampWaterImpactDropletSize(
             defaults.object(forKey: clickWaterImpactDropletSizeKey) as? Double ?? fallback.waterImpactDropletSize
         )
+        let clickParticleExplosionDensity = clampClickParticleExplosionDensity(
+            defaults.object(forKey: clickParticleExplosionDensityKey) as? Double ?? fallback.clickParticleExplosionDensity
+        )
+        let clickParticleExplosionSize = clampClickParticleExplosionSize(
+            defaults.object(forKey: clickParticleExplosionSizeKey) as? Double ?? fallback.clickParticleExplosionSize
+        )
+        let clickParticleExplosionLifetimeMilliseconds = clampClickParticleExplosionLifetimeMilliseconds(
+            defaults.object(forKey: clickParticleExplosionLifetimeKey) as? Double ?? fallback.clickParticleExplosionLifetimeMilliseconds
+        )
+        let clickParticleExplosionSpeed = clampClickParticleExplosionSpeed(
+            defaults.object(forKey: clickParticleExplosionSpeedKey) as? Double ?? fallback.clickParticleExplosionSpeed
+        )
+        let clickParticleExplosionColors = decodeColorArray(defaults.array(forKey: clickParticleExplosionColorsKey), minCount: 1)
+            ?? fallback.clickParticleExplosionColors
         let magnifierRadius = clampMagnifierRadius(
             defaults.object(forKey: magnifierRadiusKey) as? Double ?? fallback.magnifierRadius
         )
@@ -175,6 +214,12 @@ final class SettingsStore {
         let showTrailEffectsWhileMagnifierActive = defaults.object(forKey: magnifierShowTrailEffectsKey) as? Bool
             ?? fallback.showTrailEffectsWhileMagnifierActive
         var isTrailEffectsEnabled = defaults.object(forKey: trailEffectsEnabledKey) as? Bool ?? fallback.isTrailEffectsEnabled
+        let disableTrailFadeAndForceSolid = defaults.object(forKey: trailFadeDisableKey) as? Bool
+            ?? fallback.disableTrailFadeAndForceSolid
+        let colorFadeDisabledKeys = Set(
+            (defaults.array(forKey: colorFadeDisabledKeysKey) as? [String] ?? Array(fallback.colorFadeDisabledKeys))
+                .filter { !$0.isEmpty }
+        )
         let trailEffectIntensityObject = defaults.object(forKey: trailEffectIntensityKey)
         var trailEffectIntensity = clampTrailEffectIntensity(
             trailEffectIntensityObject as? Double ?? fallback.trailEffectIntensity
@@ -198,6 +243,38 @@ final class SettingsStore {
                 trailEffectIntensity = 100
             }
         }
+        let electricArcDensity = clampElectricArcDensity(
+            defaults.object(forKey: trailEffectElectricDensityKey) as? Double ?? fallback.electricArcDensity
+        )
+        let electricArcLength = clampElectricArcLength(
+            defaults.object(forKey: trailEffectElectricLengthKey) as? Double ?? fallback.electricArcLength
+        )
+        let electricArcWidth = clampElectricArcWidth(
+            defaults.object(forKey: trailEffectElectricWidthKey) as? Double ?? fallback.electricArcWidth
+        )
+        let inkDensity = clampInkDensity(
+            defaults.object(forKey: trailEffectInkDensityKey) as? Double ?? fallback.inkDensity
+        )
+        let inkSize = clampInkSize(
+            defaults.object(forKey: trailEffectInkSizeKey) as? Double ?? fallback.inkSize
+        )
+        let inkLifetimeMilliseconds = clampInkLifetimeMilliseconds(
+            defaults.object(forKey: trailEffectInkLifetimeKey) as? Double ?? fallback.inkLifetimeMilliseconds
+        )
+        let inkColors = decodeColorArray(defaults.array(forKey: trailEffectInkColorsKey), minCount: 1) ?? fallback.inkColors
+        let particleDensity = clampParticleDensity(
+            defaults.object(forKey: trailEffectParticleDensityKey) as? Double ?? fallback.particleDensity
+        )
+        let particleSize = clampParticleSize(
+            defaults.object(forKey: trailEffectParticleSizeKey) as? Double ?? fallback.particleSize
+        )
+        let particleLifetimeMilliseconds = clampParticleLifetimeMilliseconds(
+            defaults.object(forKey: trailEffectParticleLifetimeKey) as? Double ?? fallback.particleLifetimeMilliseconds
+        )
+        let particleSpeed = clampParticleSpeed(
+            defaults.object(forKey: trailEffectParticleSpeedKey) as? Double ?? fallback.particleSpeed
+        )
+        let particleColors = decodeColorArray(defaults.array(forKey: trailEffectParticleColorsKey), minCount: 1) ?? fallback.particleColors
         let speedBurstEnabled = defaults.object(forKey: speedBurstEnabledKey) as? Bool ?? fallback.speedBurstEnabled
         let speedBurstType = defaults
             .string(forKey: speedBurstTypeKey)
@@ -309,6 +386,7 @@ final class SettingsStore {
             isClickEffectsEnabled: isClickEffectsEnabled,
             isMagnifierEnabled: isMagnifierEnabled,
             languageCode: languageCode,
+            prefersDarkAppearance: prefersDarkAppearance,
             trailColor: decodeColor(defaults.data(forKey: trailColorKey)) ?? fallback.trailColor,
             trailEffectColor: decodeColor(defaults.data(forKey: trailEffectColorKey)) ?? fallback.trailEffectColor,
             trailStyle: trailStyle,
@@ -316,6 +394,7 @@ final class SettingsStore {
             rainbowTrailColors: rainbowTrailColors,
             neonPrimaryColor: neonPrimaryColor,
             neonSecondaryColor: neonSecondaryColor,
+            neonPrimaryWidthRatio: neonPrimaryWidthRatio,
             waterHighlightColor: waterHighlightColor,
             waterPrimaryColor: waterPrimaryColor,
             waterShadowColor: waterShadowColor,
@@ -338,6 +417,11 @@ final class SettingsStore {
             waterImpactSpreadSpeed: waterImpactSpreadSpeed,
             waterImpactLifetimeMilliseconds: waterImpactLifetimeMilliseconds,
             waterImpactDropletSize: waterImpactDropletSize,
+            clickParticleExplosionDensity: clickParticleExplosionDensity,
+            clickParticleExplosionSize: clickParticleExplosionSize,
+            clickParticleExplosionLifetimeMilliseconds: clickParticleExplosionLifetimeMilliseconds,
+            clickParticleExplosionSpeed: clickParticleExplosionSpeed,
+            clickParticleExplosionColors: clickParticleExplosionColors,
             magnifierRadius: magnifierRadius,
             magnifierZoom: magnifierZoom,
             magnifierBorderWidth: magnifierBorderWidth,
@@ -346,7 +430,21 @@ final class SettingsStore {
             showTrailEffectsWhileMagnifierActive: showTrailEffectsWhileMagnifierActive,
             magnifierShortcut: magnifierShortcut,
             isTrailEffectsEnabled: isTrailEffectsEnabled,
+            disableTrailFadeAndForceSolid: disableTrailFadeAndForceSolid,
+            colorFadeDisabledKeys: colorFadeDisabledKeys,
             trailEffectIntensity: trailEffectIntensity,
+            electricArcDensity: electricArcDensity,
+            electricArcLength: electricArcLength,
+            electricArcWidth: electricArcWidth,
+            inkDensity: inkDensity,
+            inkSize: inkSize,
+            inkLifetimeMilliseconds: inkLifetimeMilliseconds,
+            inkColors: inkColors,
+            particleDensity: particleDensity,
+            particleSize: particleSize,
+            particleLifetimeMilliseconds: particleLifetimeMilliseconds,
+            particleSpeed: particleSpeed,
+            particleColors: particleColors,
             speedBurstEnabled: speedBurstEnabled,
             speedBurstType: speedBurstType,
             speedBurstVelocityThreshold: speedBurstVelocityThreshold,
@@ -371,6 +469,7 @@ final class SettingsStore {
             clickEffects: clickEffects
         )
         loadedSettings.normalizeWaterMixRatios()
+        loadedSettings.normalizeEffectStyleSettings()
         return loadedSettings
     }
 
@@ -384,6 +483,7 @@ final class SettingsStore {
         defaults.set(settings.isClickEffectsEnabled, forKey: clickEffectsEnabledKey)
         defaults.set(settings.isMagnifierEnabled, forKey: magnifierEnabledKey)
         defaults.set(settings.languageCode, forKey: languageCodeKey)
+        defaults.set(settings.prefersDarkAppearance, forKey: prefersDarkAppearanceKey)
         defaults.set(Double(settings.trailWidth), forKey: trailWidthKey)
         defaults.set(settings.trailStyle.rawValue, forKey: trailStyleKey)
         defaults.set(settings.trailEffectStyle.rawValue, forKey: trailEffectStyleKey)
@@ -391,6 +491,7 @@ final class SettingsStore {
         defaults.set(settings.rainbowTrailColors.compactMap(encodeColor), forKey: trailRainbowColorsKey)
         defaults.set(encodeColor(settings.neonPrimaryColor), forKey: trailNeonPrimaryColorKey)
         defaults.set(encodeColor(settings.neonSecondaryColor), forKey: trailNeonSecondaryColorKey)
+        defaults.set(Double(settings.neonPrimaryWidthRatio), forKey: trailNeonPrimaryWidthRatioKey)
         defaults.set(encodeColor(settings.waterHighlightColor), forKey: trailWaterHighlightColorKey)
         defaults.set(encodeColor(settings.waterPrimaryColor), forKey: trailWaterPrimaryColorKey)
         defaults.set(encodeColor(settings.waterShadowColor), forKey: trailWaterShadowColorKey)
@@ -411,6 +512,11 @@ final class SettingsStore {
         defaults.set(Double(settings.waterImpactSpreadSpeed), forKey: clickWaterImpactSpreadSpeedKey)
         defaults.set(settings.waterImpactLifetimeMilliseconds, forKey: clickWaterImpactLifetimeKey)
         defaults.set(Double(settings.waterImpactDropletSize), forKey: clickWaterImpactDropletSizeKey)
+        defaults.set(Double(settings.clickParticleExplosionDensity), forKey: clickParticleExplosionDensityKey)
+        defaults.set(Double(settings.clickParticleExplosionSize), forKey: clickParticleExplosionSizeKey)
+        defaults.set(settings.clickParticleExplosionLifetimeMilliseconds, forKey: clickParticleExplosionLifetimeKey)
+        defaults.set(Double(settings.clickParticleExplosionSpeed), forKey: clickParticleExplosionSpeedKey)
+        defaults.set(settings.clickParticleExplosionColors.compactMap(encodeColor), forKey: clickParticleExplosionColorsKey)
         defaults.set(Double(settings.magnifierRadius), forKey: magnifierRadiusKey)
         defaults.set(Double(settings.magnifierZoom), forKey: magnifierZoomKey)
         defaults.set(Double(settings.magnifierBorderWidth), forKey: magnifierBorderWidthKey)
@@ -422,7 +528,21 @@ final class SettingsStore {
         defaults.set(settings.magnifierShortcut.mouseButton?.rawValue, forKey: magnifierShortcutMouseButtonKey)
         defaults.set(settings.magnifierShortcut.modifiersRaw, forKey: magnifierShortcutModifiersKey)
         defaults.set(settings.isTrailEffectsEnabled, forKey: trailEffectsEnabledKey)
+        defaults.set(settings.disableTrailFadeAndForceSolid, forKey: trailFadeDisableKey)
+        defaults.set(Array(settings.colorFadeDisabledKeys).sorted(), forKey: colorFadeDisabledKeysKey)
         defaults.set(Double(settings.trailEffectIntensity), forKey: trailEffectIntensityKey)
+        defaults.set(Double(settings.electricArcDensity), forKey: trailEffectElectricDensityKey)
+        defaults.set(Double(settings.electricArcLength), forKey: trailEffectElectricLengthKey)
+        defaults.set(Double(settings.electricArcWidth), forKey: trailEffectElectricWidthKey)
+        defaults.set(Double(settings.inkDensity), forKey: trailEffectInkDensityKey)
+        defaults.set(Double(settings.inkSize), forKey: trailEffectInkSizeKey)
+        defaults.set(settings.inkLifetimeMilliseconds, forKey: trailEffectInkLifetimeKey)
+        defaults.set(settings.inkColors.compactMap(encodeColor), forKey: trailEffectInkColorsKey)
+        defaults.set(Double(settings.particleDensity), forKey: trailEffectParticleDensityKey)
+        defaults.set(Double(settings.particleSize), forKey: trailEffectParticleSizeKey)
+        defaults.set(settings.particleLifetimeMilliseconds, forKey: trailEffectParticleLifetimeKey)
+        defaults.set(Double(settings.particleSpeed), forKey: trailEffectParticleSpeedKey)
+        defaults.set(settings.particleColors.compactMap(encodeColor), forKey: trailEffectParticleColorsKey)
         let legacyIntensityPreset: EffectIntensityPreset = if !settings.isTrailEffectsEnabled {
             .off
         } else if settings.trailEffectIntensity < 50 {
@@ -474,13 +594,13 @@ final class SettingsStore {
         return try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
     }
 
-    private func decodeColorArray(_ value: [Any]?) -> [NSColor]? {
+    private func decodeColorArray(_ value: [Any]?, minCount: Int = 2) -> [NSColor]? {
         guard let value else { return nil }
         let colors = value.compactMap { item -> NSColor? in
             guard let data = item as? Data else { return nil }
             return decodeColor(data)
         }
-        return colors.count >= 2 ? colors : nil
+        return colors.count >= minCount ? colors : nil
     }
 }
 

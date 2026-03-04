@@ -20,6 +20,10 @@ func clampWaterMixRandomness(_ value: Double) -> CGFloat {
     CGFloat(min(100.0, max(0.0, value)))
 }
 
+func clampNeonPrimaryWidthRatio(_ value: Double) -> CGFloat {
+    CGFloat(min(90.0, max(10.0, value)))
+}
+
 func clampWaterSplashSize(_ value: Double) -> CGFloat {
     CGFloat(min(10.0, max(0.1, value)))
 }
@@ -38,6 +42,50 @@ func clampWaterSplashDensity(_ value: Double) -> CGFloat {
 
 func clampTrailEffectIntensity(_ value: Double) -> CGFloat {
     CGFloat(min(100.0, max(0.0, value)))
+}
+
+func clampElectricArcDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampElectricArcLength(_ value: Double) -> CGFloat {
+    CGFloat(min(80.0, max(2.0, value)))
+}
+
+func clampElectricArcWidth(_ value: Double) -> CGFloat {
+    CGFloat(min(6.0, max(0.4, value)))
+}
+
+func clampInkDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampInkSize(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.2, value)))
+}
+
+func clampInkLifetimeMilliseconds(_ value: Double) -> Double {
+    min(2_000.0, max(40.0, value))
+}
+
+func clampParticleDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampParticleSize(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.2, value)))
+}
+
+func clampParticleLifetimeMilliseconds(_ value: Double) -> Double {
+    min(2_000.0, max(40.0, value))
+}
+
+func clampParticleSpeed(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampEffectPaletteCount(_ value: Int) -> Int {
+    min(10, max(1, value))
 }
 
 func clampClickEffectRadius(_ value: Double) -> CGFloat {
@@ -62,6 +110,26 @@ func clampWaterImpactLifetimeMilliseconds(_ value: Double) -> Double {
 
 func clampWaterImpactDropletSize(_ value: Double) -> CGFloat {
     CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampClickParticleExplosionDensity(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampClickParticleExplosionSize(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.2, value)))
+}
+
+func clampClickParticleExplosionLifetimeMilliseconds(_ value: Double) -> Double {
+    min(2_000.0, max(40.0, value))
+}
+
+func clampClickParticleExplosionSpeed(_ value: Double) -> CGFloat {
+    CGFloat(min(10.0, max(0.1, value)))
+}
+
+func clampClickParticleExplosionPaletteCount(_ value: Int) -> Int {
+    min(7, max(1, value))
 }
 
 func clampMagnifierRadius(_ value: Double) -> CGFloat {

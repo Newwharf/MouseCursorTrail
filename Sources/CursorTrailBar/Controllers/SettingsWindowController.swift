@@ -89,11 +89,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let loggingSwitch = NSSwitch()
     private let statusItemSwitch = NSSwitch()
     private let trackingSwitch = NSSwitch()
+    private let darkAppearanceSwitch = NSSwitch()
     private let clickEffectsSwitch = NSSwitch()
     private let magnifierEnabledSwitch = NSSwitch()
     private let magnifierShowEffectsSwitch = NSSwitch()
     private let speedBurstSwitch = NSSwitch()
     private let trailEffectsSwitch = NSSwitch()
+    private let disableTrailFadeSwitch = NSSwitch()
     private let waterMixSeedLockSwitch = NSSwitch()
 
     private let trailColorWell = NSColorWell()
@@ -107,6 +109,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let waterShadowColorWell = NSColorWell()
     private let waterSplashColorWell = NSColorWell()
     private let magnifierBorderColorWell = NSColorWell()
+    private var inkEffectColorWells: [NSColorWell] = []
+    private var particleEffectColorWells: [NSColorWell] = []
 
     private let trailWidthSlider = NSSlider()
     private let trailWidthValueLabel = NSTextField(labelWithString: "")
@@ -144,6 +148,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let speedBurstAccentSizeValueLabel = NSTextField(labelWithString: "")
     private let waterHighlightRatioSlider = NSSlider()
     private let waterHighlightRatioValueLabel = NSTextField(labelWithString: "")
+    private let neonPrimaryWidthRatioSlider = NSSlider()
+    private let neonPrimaryWidthRatioValueLabel = NSTextField(labelWithString: "")
     private let waterPrimaryRatioSlider = NSSlider()
     private let waterPrimaryRatioValueLabel = NSTextField(labelWithString: "")
     private let waterShadowRatioSlider = NSSlider()
@@ -160,6 +166,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let waterSplashDensityValueLabel = NSTextField(labelWithString: "")
     private let trailEffectIntensitySlider = NSSlider()
     private let trailEffectIntensityValueLabel = NSTextField(labelWithString: "")
+    private let electricArcDensitySlider = NSSlider()
+    private let electricArcDensityValueLabel = NSTextField(labelWithString: "")
+    private let electricArcLengthSlider = NSSlider()
+    private let electricArcLengthValueLabel = NSTextField(labelWithString: "")
+    private let electricArcWidthSlider = NSSlider()
+    private let electricArcWidthValueLabel = NSTextField(labelWithString: "")
+    private let inkDensitySlider = NSSlider()
+    private let inkDensityValueLabel = NSTextField(labelWithString: "")
+    private let inkSizeSlider = NSSlider()
+    private let inkSizeValueLabel = NSTextField(labelWithString: "")
+    private let inkLifetimeSlider = NSSlider()
+    private let inkLifetimeValueLabel = NSTextField(labelWithString: "")
+    private let particleDensitySlider = NSSlider()
+    private let particleDensityValueLabel = NSTextField(labelWithString: "")
+    private let particleSizeSlider = NSSlider()
+    private let particleSizeValueLabel = NSTextField(labelWithString: "")
+    private let particleLifetimeSlider = NSSlider()
+    private let particleLifetimeValueLabel = NSTextField(labelWithString: "")
+    private let particleSpeedSlider = NSSlider()
+    private let particleSpeedValueLabel = NSTextField(labelWithString: "")
     private let clickRadiusSlider = NSSlider()
     private let clickRadiusValueLabel = NSTextField(labelWithString: "")
     private let clickDurationSlider = NSSlider()
@@ -172,6 +198,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let waterImpactLifetimeValueLabel = NSTextField(labelWithString: "")
     private let waterImpactDropletSizeSlider = NSSlider()
     private let waterImpactDropletSizeValueLabel = NSTextField(labelWithString: "")
+    private let clickParticleExplosionDensitySlider = NSSlider()
+    private let clickParticleExplosionDensityValueLabel = NSTextField(labelWithString: "")
+    private let clickParticleExplosionSizeSlider = NSSlider()
+    private let clickParticleExplosionSizeValueLabel = NSTextField(labelWithString: "")
+    private let clickParticleExplosionLifetimeSlider = NSSlider()
+    private let clickParticleExplosionLifetimeValueLabel = NSTextField(labelWithString: "")
+    private let clickParticleExplosionSpeedSlider = NSSlider()
+    private let clickParticleExplosionSpeedValueLabel = NSTextField(labelWithString: "")
     private let magnifierRadiusSlider = NSSlider()
     private let magnifierRadiusValueLabel = NSTextField(labelWithString: "")
     private let magnifierZoomSlider = NSSlider()
@@ -201,6 +235,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let openScreenCaptureSettingsButton = NSButton(title: "", target: nil, action: nil)
     private let openLogFolderButton = NSButton(title: "", target: nil, action: nil)
     private let openLanguagePacksFolderButton = NSButton(title: "", target: nil, action: nil)
+    private let addInkColorButton = NSButton(title: "+", target: nil, action: nil)
+    private let removeInkColorButton = NSButton(title: "−", target: nil, action: nil)
+    private let addParticleColorButton = NSButton(title: "+", target: nil, action: nil)
+    private let removeParticleColorButton = NSButton(title: "−", target: nil, action: nil)
+    private let addClickParticleExplosionColorButton = NSButton(title: "+", target: nil, action: nil)
+    private let removeClickParticleExplosionColorButton = NSButton(title: "−", target: nil, action: nil)
+    private let inkColorsStack = NSStackView()
+    private let particleColorsStack = NSStackView()
+    private let clickParticleExplosionColorsStack = NSStackView()
     private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
     private var availableLanguageOptions: [LanguageOption] = []
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
@@ -213,11 +256,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     private lazy var trailTypeRow = makePopupRow(title: i18n("row.trail.type", "轨迹类型"), popup: trailStylePopup)
     private lazy var trailColorRow = makeColorRow(title: i18n("row.trail.color", "轨迹颜色"), control: trailColorWell)
+    private lazy var trailColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailColor)
     private lazy var waterColorsRow = makeWaterColorsRow()
+    private lazy var waterColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailWaterColors)
     private lazy var waterHighlightRatioRow = makeSliderRow(
         title: i18n("row.trail.waterHighlightRatio", "高光占比"),
         slider: waterHighlightRatioSlider,
         valueLabel: waterHighlightRatioValueLabel
+    )
+    private lazy var neonPrimaryWidthRatioRow = makeSliderRow(
+        title: i18n("row.trail.neonPrimaryWidthRatio", "主色宽度占比"),
+        slider: neonPrimaryWidthRatioSlider,
+        valueLabel: neonPrimaryWidthRatioValueLabel
     )
     private lazy var waterPrimaryRatioRow = makeSliderRow(
         title: i18n("row.trail.waterPrimaryRatio", "主色占比"),
@@ -240,19 +290,86 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         toggle: waterMixSeedLockSwitch
     )
     private lazy var trailEffectColorRow = makeColorRow(title: i18n("row.trail.effectColor", "特效颜色"), control: trailEffectColorWell)
+    private lazy var trailEffectColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailEffectColor)
     private lazy var neonColorsRow = makeNeonColorsRow()
+    private lazy var neonColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailNeonColors)
     private lazy var rainbowColorsRow = makeRainbowColorsRow()
+    private lazy var rainbowColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailRainbowColors)
     private lazy var trailEffectTypeRow = makePopupRow(title: i18n("row.trail.effectType", "特效类型"), popup: trailEffectPopup)
     private lazy var trailEffectsEnabledRow = makeSwitchRow(
         title: i18n("row.trail.effects.enabled", "开启特效"),
         subtitle: i18n("row.trail.effects.enabled.subtitle", "关闭后不渲染任何轨迹附加特效"),
         toggle: trailEffectsSwitch
     )
-    private lazy var trailEffectIntensityRow = makeSliderRow(
-        title: i18n("row.trail.effectIntensity", "特效强度"),
-        slider: trailEffectIntensitySlider,
-        valueLabel: trailEffectIntensityValueLabel
+    private lazy var disableTrailFadeRow = makeSwitchRow(
+        title: i18n("row.trail.disableFade", "禁用渐隐/强制实色"),
+        subtitle: i18n("row.trail.disableFade.subtitle", "开启后轨迹与特效颜色不再渐隐，保持你设置的透明度"),
+        toggle: disableTrailFadeSwitch
     )
+    private lazy var electricArcDensityRow = makeSliderRow(
+        title: i18n("row.trail.electricDensity", "电弧密度"),
+        slider: electricArcDensitySlider,
+        valueLabel: electricArcDensityValueLabel
+    )
+    private lazy var electricArcLengthRow = makeSliderRow(
+        title: i18n("row.trail.electricLength", "电弧长度"),
+        slider: electricArcLengthSlider,
+        valueLabel: electricArcLengthValueLabel
+    )
+    private lazy var electricArcWidthRow = makeSliderRow(
+        title: i18n("row.trail.electricWidth", "电弧宽度"),
+        slider: electricArcWidthSlider,
+        valueLabel: electricArcWidthValueLabel
+    )
+    private lazy var inkDensityRow = makeSliderRow(
+        title: i18n("row.trail.inkDensity", "墨迹密度"),
+        slider: inkDensitySlider,
+        valueLabel: inkDensityValueLabel
+    )
+    private lazy var inkSizeRow = makeSliderRow(
+        title: i18n("row.trail.inkSize", "墨迹大小"),
+        slider: inkSizeSlider,
+        valueLabel: inkSizeValueLabel
+    )
+    private lazy var inkLifetimeRow = makeSliderRow(
+        title: i18n("row.trail.inkLifetime", "墨迹持续时间（毫秒）"),
+        slider: inkLifetimeSlider,
+        valueLabel: inkLifetimeValueLabel
+    )
+    private lazy var inkColorsRow = makeDynamicPaletteRow(
+        title: i18n("row.trail.inkColors", "墨迹颜色"),
+        colorsStack: inkColorsStack,
+        addButton: addInkColorButton,
+        removeButton: removeInkColorButton
+    )
+    private lazy var inkColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailInkColors)
+    private lazy var particleDensityRow = makeSliderRow(
+        title: i18n("row.trail.particleDensity", "粒子密度"),
+        slider: particleDensitySlider,
+        valueLabel: particleDensityValueLabel
+    )
+    private lazy var particleSizeRow = makeSliderRow(
+        title: i18n("row.trail.particleSize", "粒子大小"),
+        slider: particleSizeSlider,
+        valueLabel: particleSizeValueLabel
+    )
+    private lazy var particleLifetimeRow = makeSliderRow(
+        title: i18n("row.trail.particleLifetime", "粒子持续时间（毫秒）"),
+        slider: particleLifetimeSlider,
+        valueLabel: particleLifetimeValueLabel
+    )
+    private lazy var particleSpeedRow = makeSliderRow(
+        title: i18n("row.trail.particleSpeed", "粒子速度"),
+        slider: particleSpeedSlider,
+        valueLabel: particleSpeedValueLabel
+    )
+    private lazy var particleColorsRow = makeDynamicPaletteRow(
+        title: i18n("row.trail.particleColors", "粒子颜色"),
+        colorsStack: particleColorsStack,
+        addButton: addParticleColorButton,
+        removeButton: removeParticleColorButton
+    )
+    private lazy var particleColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailParticleColors)
     private lazy var waterSplashSizeRow = makeSliderRow(
         title: i18n("row.trail.waterSplashSize", "水花大小"),
         slider: waterSplashSizeSlider,
@@ -277,11 +394,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         title: i18n("row.trail.waterSplashColor", "水花颜色"),
         control: waterSplashColorWell
     )
+    private lazy var waterSplashColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailWaterSplashColor)
     private lazy var trailWidthRow = makeSliderRow(title: i18n("row.trail.width", "轨迹粗细"), slider: trailWidthSlider, valueLabel: trailWidthValueLabel)
     private lazy var trailLengthRow = makeSliderRow(title: i18n("row.trail.lengthMs", "轨迹长度（毫秒）"), slider: trailLengthSlider, valueLabel: trailLengthValueLabel)
     private lazy var speedBurstTypeRow = makePopupRow(title: i18n("row.speedBurst.type", "爆发类型"), popup: speedBurstTypePopup)
     private lazy var speedBurstLineColorRow = makeColorRow(title: i18n("row.speedBurst.lineColor", "爆发线颜色"), control: speedBurstLineColorWell)
+    private lazy var speedBurstLineColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.speedBurstLineColor)
     private lazy var speedBurstAccentColorRow = makeColorRow(title: i18n("row.speedBurst.accentColor", "端点爆发颜色"), control: speedBurstAccentColorWell)
+    private lazy var speedBurstAccentColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.speedBurstAccentColor)
     private lazy var speedBurstVelocityRow = makeSliderRow(title: i18n("row.speedBurst.velocity", "触发速度阈值"), slider: speedBurstVelocitySlider, valueLabel: speedBurstVelocityValueLabel)
     private lazy var speedBurstCooldownRow = makeSliderRow(title: i18n("row.speedBurst.cooldown", "冷却时间（毫秒）"), slider: speedBurstCooldownSlider, valueLabel: speedBurstCooldownValueLabel)
     private lazy var speedBurstDurationRow = makeSliderRow(title: i18n("row.speedBurst.duration", "爆发线时长（毫秒）"), slider: speedBurstDurationSlider, valueLabel: speedBurstDurationValueLabel)
@@ -325,6 +445,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     )
     private lazy var speedBurstAccentDurationRow = makeSliderRow(title: i18n("row.speedBurst.accentDuration", "端点爆发时长（毫秒）"), slider: speedBurstAccentDurationSlider, valueLabel: speedBurstAccentDurationValueLabel)
     private lazy var speedBurstAccentSizeRow = makeSliderRow(title: i18n("row.speedBurst.accentSize", "端点爆发大小"), slider: speedBurstAccentSizeSlider, valueLabel: speedBurstAccentSizeValueLabel)
+    private lazy var darkAppearanceRow = makeSwitchRow(
+        title: i18n("row.appearance.darkMode", "深色模式"),
+        subtitle: i18n("row.appearance.darkMode.subtitle", "关闭后使用浅色模式"),
+        toggle: darkAppearanceSwitch
+    )
     private lazy var clickRadiusRow = makeSliderRow(title: i18n("row.click.radius", "点击效果半径"), slider: clickRadiusSlider, valueLabel: clickRadiusValueLabel)
     private lazy var clickDurationRow = makeSliderRow(title: i18n("row.click.duration", "点击效果时长（毫秒）"), slider: clickDurationSlider, valueLabel: clickDurationValueLabel)
     private lazy var waterImpactDensityRow = makeSliderRow(
@@ -347,11 +472,49 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         slider: waterImpactDropletSizeSlider,
         valueLabel: waterImpactDropletSizeValueLabel
     )
+    private lazy var clickParticleExplosionDensityRow = makeSliderRow(
+        title: i18n("row.click.particleExplosion.density", "粒子密度"),
+        slider: clickParticleExplosionDensitySlider,
+        valueLabel: clickParticleExplosionDensityValueLabel
+    )
+    private lazy var clickParticleExplosionSizeRow = makeSliderRow(
+        title: i18n("row.click.particleExplosion.size", "粒子大小"),
+        slider: clickParticleExplosionSizeSlider,
+        valueLabel: clickParticleExplosionSizeValueLabel
+    )
+    private lazy var clickParticleExplosionLifetimeRow = makeSliderRow(
+        title: i18n("row.click.particleExplosion.lifetime", "粒子持续时间（毫秒）"),
+        slider: clickParticleExplosionLifetimeSlider,
+        valueLabel: clickParticleExplosionLifetimeValueLabel
+    )
+    private lazy var clickParticleExplosionSpeedRow = makeSliderRow(
+        title: i18n("row.click.particleExplosion.speed", "粒子速度"),
+        slider: clickParticleExplosionSpeedSlider,
+        valueLabel: clickParticleExplosionSpeedValueLabel
+    )
+    private lazy var clickParticleExplosionColorsRow = makeDynamicPaletteRow(
+        title: i18n("row.click.particleExplosion.colors", "粒子颜色"),
+        colorsStack: clickParticleExplosionColorsStack,
+        addButton: addClickParticleExplosionColorButton,
+        removeButton: removeClickParticleExplosionColorButton
+    )
+    private lazy var clickParticleExplosionColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.clickParticleExplosionColors)
 
     private var clickToggleButtons: [MouseButtonKind: NSSwitch] = [:]
     private var clickColorWells: [MouseButtonKind: NSColorWell] = [:]
+    private var clickColorFadeRows: [MouseButtonKind: NSView] = [:]
+    private var clickParticleExplosionColorWells: [NSColorWell] = []
     private var toggleButtonToKind: [ObjectIdentifier: MouseButtonKind] = [:]
     private var colorWellToKind: [ObjectIdentifier: MouseButtonKind] = [:]
+    private var colorFadeSwitches: [String: NSSwitch] = [:]
+    private var colorFadeRows: [String: NSView] = [:]
+    private var colorFadeSwitchToKey: [ObjectIdentifier: String] = [:]
+    private weak var rootBackgroundView: NSView?
+    private weak var rightPanelContainerView: NSView?
+    private weak var sidebarContainerView: NSView?
+    private weak var sidebarBorderView: NSView?
+    private var sectionCardContainers: [NSView] = []
+    private var rowSeparatorViews: [NSView] = []
 
     private var shortcutCaptureMonitor: Any?
     private var isShortcutRecording = false
@@ -403,6 +566,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         backgroundView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(backgroundView)
+        rootBackgroundView = backgroundView
         NSLayoutConstraint.activate([
             backgroundView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             backgroundView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -434,6 +598,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         rightPanelContainer.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         rightPanelContainer.translatesAutoresizingMaskIntoConstraints = false
         splitStack.addArrangedSubview(rightPanelContainer)
+        rightPanelContainerView = rightPanelContainer
 
         let contentRightInset: CGFloat = 18
         let scrollView = NSScrollView()
@@ -507,6 +672,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         configureTargets()
         configureSliders()
         refreshPermissionIndicators()
+        applyAppearanceColors()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.activateSidebarTab(self.activeSidebarTab, scrollToTop: true)
@@ -519,6 +685,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         sidebar.wantsLayer = true
         sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebarContainerView = sidebar
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -551,6 +718,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         rightBorder.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.04).cgColor
         rightBorder.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(rightBorder)
+        sidebarBorderView = rightBorder
         NSLayoutConstraint.activate([
             rightBorder.topAnchor.constraint(equalTo: sidebar.topAnchor),
             rightBorder.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
@@ -671,9 +839,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     private func refreshSidebarSelectionState() {
+        let effectiveAppearance = window?.effectiveAppearance ?? NSApp.effectiveAppearance
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         for (tab, button) in sidebarButtons {
             let isSelected = tab == activeSidebarTab
-            let titleColor = isSelected ? NSColor.white : NSColor.labelColor
+            let normalColor = isDark
+                ? NSColor(calibratedWhite: 0.78, alpha: 1.0)
+                : NSColor.labelColor
+            let titleColor = isSelected ? NSColor.white : normalColor
             let titleWeight: NSFont.Weight = isSelected ? .semibold : .regular
             button.attributedTitle = NSAttributedString(
                 string: tab.title,
@@ -718,10 +891,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         trackingSwitch.target = self
         trackingSwitch.action = #selector(trackingSwitchChanged(_:))
 
+        darkAppearanceSwitch.target = self
+        darkAppearanceSwitch.action = #selector(darkAppearanceSwitchChanged(_:))
+
         speedBurstSwitch.target = self
         speedBurstSwitch.action = #selector(speedBurstSwitchChanged(_:))
         trailEffectsSwitch.target = self
         trailEffectsSwitch.action = #selector(trailEffectsSwitchChanged(_:))
+        disableTrailFadeSwitch.target = self
+        disableTrailFadeSwitch.action = #selector(disableTrailFadeSwitchChanged(_:))
 
         clickEffectsSwitch.target = self
         clickEffectsSwitch.action = #selector(clickEffectsSwitchChanged(_:))
@@ -754,6 +932,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         waterSplashColorWell.action = #selector(waterSplashColorChanged(_:))
         magnifierBorderColorWell.target = self
         magnifierBorderColorWell.action = #selector(magnifierBorderColorChanged(_:))
+        addInkColorButton.target = self
+        addInkColorButton.action = #selector(addInkColorClicked(_:))
+        removeInkColorButton.target = self
+        removeInkColorButton.action = #selector(removeInkColorClicked(_:))
+        addParticleColorButton.target = self
+        addParticleColorButton.action = #selector(addParticleColorClicked(_:))
+        removeParticleColorButton.target = self
+        removeParticleColorButton.action = #selector(removeParticleColorClicked(_:))
+        addClickParticleExplosionColorButton.target = self
+        addClickParticleExplosionColorButton.action = #selector(addClickParticleExplosionColorClicked(_:))
+        removeClickParticleExplosionColorButton.target = self
+        removeClickParticleExplosionColorButton.action = #selector(removeClickParticleExplosionColorClicked(_:))
 
         trailStylePopup.target = self
         trailStylePopup.action = #selector(trailStyleChanged(_:))
@@ -850,7 +1040,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     private func reloadTrailPresetPopup(selecting option: TrailPresetOption?) {
         customTrailPresets = AppSettings.loadCustomTrailPresets()
-        trailPresetOptions = [.custom, .thunderFirstForm, .waterFirstForm]
+        trailPresetOptions = [.custom]
         trailPresetOptions.append(contentsOf: customTrailPresets.map { .userPreset(id: $0.id) })
 
         trailPresetPopup.removeAllItems()
@@ -906,10 +1096,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         configureSlider(speedBurstEffectMaxScaleSlider, min: 0.1, max: 10.0, value: 2.0, action: #selector(speedBurstEffectMaxScaleSliderChanged(_:)))
         configureSlider(speedBurstAccentDurationSlider, min: 40, max: 2000, value: 190, action: #selector(speedBurstAccentDurationSliderChanged(_:)))
         configureSlider(speedBurstAccentSizeSlider, min: 4, max: 400, value: 32, action: #selector(speedBurstAccentSizeSliderChanged(_:)))
+        configureSlider(neonPrimaryWidthRatioSlider, min: 10, max: 90, value: 62, action: #selector(neonPrimaryWidthRatioSliderChanged(_:)))
         configureSlider(waterHighlightRatioSlider, min: 0, max: 100, value: 22, action: #selector(waterHighlightRatioSliderChanged(_:)))
         configureSlider(waterPrimaryRatioSlider, min: 0, max: 100, value: 56, action: #selector(waterPrimaryRatioSliderChanged(_:)))
         configureSlider(waterShadowRatioSlider, min: 0, max: 100, value: 22, action: #selector(waterShadowRatioSliderChanged(_:)))
         configureSlider(waterMixRandomnessSlider, min: 0, max: 100, value: 58, action: #selector(waterMixRandomnessSliderChanged(_:)))
+        configureSlider(electricArcDensitySlider, min: 0.1, max: 10, value: 1.5, action: #selector(electricArcDensitySliderChanged(_:)))
+        configureSlider(electricArcLengthSlider, min: 2, max: 80, value: 16, action: #selector(electricArcLengthSliderChanged(_:)))
+        configureSlider(electricArcWidthSlider, min: 0.4, max: 6, value: 1.6, action: #selector(electricArcWidthSliderChanged(_:)))
+        configureSlider(inkDensitySlider, min: 0.1, max: 10, value: 1.0, action: #selector(inkDensitySliderChanged(_:)))
+        configureSlider(inkSizeSlider, min: 0.2, max: 10, value: 1.0, action: #selector(inkSizeSliderChanged(_:)))
+        configureSlider(inkLifetimeSlider, min: 40, max: 2000, value: 560, action: #selector(inkLifetimeSliderChanged(_:)))
+        configureSlider(particleDensitySlider, min: 0.1, max: 10, value: 1.0, action: #selector(particleDensitySliderChanged(_:)))
+        configureSlider(particleSizeSlider, min: 0.2, max: 10, value: 1.0, action: #selector(particleSizeSliderChanged(_:)))
+        configureSlider(particleLifetimeSlider, min: 40, max: 2000, value: 360, action: #selector(particleLifetimeSliderChanged(_:)))
+        configureSlider(particleSpeedSlider, min: 0.1, max: 10, value: 1.0, action: #selector(particleSpeedSliderChanged(_:)))
         configureSlider(waterSplashSizeSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterSplashSizeSliderChanged(_:)))
         configureSlider(waterSplashSpeedSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterSplashSpeedSliderChanged(_:)))
         configureSlider(waterSplashLifetimeSlider, min: 40, max: 2000, value: 260, action: #selector(waterSplashLifetimeSliderChanged(_:)))
@@ -921,6 +1122,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         configureSlider(waterImpactSpreadSpeedSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterImpactSpreadSpeedSliderChanged(_:)))
         configureSlider(waterImpactLifetimeSlider, min: 40, max: 2000, value: 320, action: #selector(waterImpactLifetimeSliderChanged(_:)))
         configureSlider(waterImpactDropletSizeSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(waterImpactDropletSizeSliderChanged(_:)))
+        configureSlider(clickParticleExplosionDensitySlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(clickParticleExplosionDensitySliderChanged(_:)))
+        configureSlider(clickParticleExplosionSizeSlider, min: 0.2, max: 10.0, value: 1.0, action: #selector(clickParticleExplosionSizeSliderChanged(_:)))
+        configureSlider(clickParticleExplosionLifetimeSlider, min: 40, max: 2000, value: 320, action: #selector(clickParticleExplosionLifetimeSliderChanged(_:)))
+        configureSlider(clickParticleExplosionSpeedSlider, min: 0.1, max: 10.0, value: 1.0, action: #selector(clickParticleExplosionSpeedSliderChanged(_:)))
         configureSlider(magnifierRadiusSlider, min: 20, max: 1200, value: 120, action: #selector(magnifierRadiusSliderChanged(_:)))
         configureSlider(magnifierZoomSlider, min: 1.0, max: 8.0, value: 2.0, action: #selector(magnifierZoomSliderChanged(_:)))
         configureSlider(magnifierBorderWidthSlider, min: 0, max: 30, value: 3, action: #selector(magnifierBorderWidthSliderChanged(_:)))
@@ -938,9 +1143,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     private func applyCompactControlSizes() {
+        NSColorPanel.shared.showsAlpha = true
         let switches: [NSSwitch] =
-            [launchAtLoginSwitch, loggingSwitch, statusItemSwitch, trackingSwitch, speedBurstSwitch, trailEffectsSwitch, clickEffectsSwitch, magnifierEnabledSwitch, magnifierShowEffectsSwitch, waterMixSeedLockSwitch]
+            [launchAtLoginSwitch, loggingSwitch, statusItemSwitch, trackingSwitch, darkAppearanceSwitch, speedBurstSwitch, trailEffectsSwitch, disableTrailFadeSwitch, clickEffectsSwitch, magnifierEnabledSwitch, magnifierShowEffectsSwitch, waterMixSeedLockSwitch]
             + Array(clickToggleButtons.values)
+            + Array(colorFadeSwitches.values)
         for item in switches {
             item.controlSize = .mini
         }
@@ -949,11 +1156,86 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             [trailColorWell, trailEffectColorWell, speedBurstLineColorWell, speedBurstAccentColorWell, neonPrimaryColorWell, neonSecondaryColorWell, waterHighlightColorWell, waterPrimaryColorWell, waterShadowColorWell, waterSplashColorWell, magnifierBorderColorWell]
             + Array(clickColorWells.values)
             + rainbowColorWells
+            + inkEffectColorWells
+            + particleEffectColorWells
+            + clickParticleExplosionColorWells
         for colorWell in colorWells {
             colorWell.controlSize = .small
             colorWell.translatesAutoresizingMaskIntoConstraints = false
             colorWell.widthAnchor.constraint(equalToConstant: 32).isActive = true
             colorWell.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        }
+    }
+
+    private func syncEffectPaletteControls() {
+        settings.inkColors = sanitizedEffectPalette(settings.inkColors, fallback: AppSettings.default.inkColors, maxCount: 10)
+        settings.particleColors = sanitizedEffectPalette(settings.particleColors, fallback: AppSettings.default.particleColors, maxCount: 10)
+        settings.clickParticleExplosionColors = sanitizedEffectPalette(
+            settings.clickParticleExplosionColors,
+            fallback: AppSettings.default.clickParticleExplosionColors,
+            maxCount: 7
+        )
+        syncPaletteWells(
+            colors: settings.inkColors,
+            wells: &inkEffectColorWells,
+            stack: inkColorsStack,
+            action: #selector(inkEffectPaletteColorChanged(_:)),
+            maxCount: 10
+        )
+        syncPaletteWells(
+            colors: settings.particleColors,
+            wells: &particleEffectColorWells,
+            stack: particleColorsStack,
+            action: #selector(particleEffectPaletteColorChanged(_:)),
+            maxCount: 10
+        )
+        syncPaletteWells(
+            colors: settings.clickParticleExplosionColors,
+            wells: &clickParticleExplosionColorWells,
+            stack: clickParticleExplosionColorsStack,
+            action: #selector(clickParticleExplosionPaletteColorChanged(_:)),
+            maxCount: 7
+        )
+        removeInkColorButton.isEnabled = settings.inkColors.count > 1
+        addInkColorButton.isEnabled = settings.inkColors.count < 10
+        removeParticleColorButton.isEnabled = settings.particleColors.count > 1
+        addParticleColorButton.isEnabled = settings.particleColors.count < 10
+        removeClickParticleExplosionColorButton.isEnabled = settings.clickParticleExplosionColors.count > 1
+        addClickParticleExplosionColorButton.isEnabled = settings.clickParticleExplosionColors.count < 7
+    }
+
+    private func sanitizedEffectPalette(_ colors: [NSColor], fallback: [NSColor], maxCount: Int) -> [NSColor] {
+        let source = colors.isEmpty ? fallback : colors
+        let count = min(maxCount, max(1, source.count))
+        return Array(source.prefix(count))
+    }
+
+    private func syncPaletteWells(
+        colors: [NSColor],
+        wells: inout [NSColorWell],
+        stack: NSStackView,
+        action: Selector,
+        maxCount: Int
+    ) {
+        let targetCount = min(maxCount, max(1, colors.count))
+        while wells.count > targetCount, let well = wells.popLast() {
+            stack.removeArrangedSubview(well)
+            well.removeFromSuperview()
+        }
+        while wells.count < targetCount {
+            let well = NSColorWell()
+            well.controlSize = .small
+            well.target = self
+            well.action = action
+            well.translatesAutoresizingMaskIntoConstraints = false
+            well.widthAnchor.constraint(equalToConstant: 32).isActive = true
+            well.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            stack.addArrangedSubview(well)
+            wells.append(well)
+        }
+        for (index, well) in wells.enumerated() where index < colors.count {
+            well.tag = index
+            well.color = colors[index]
         }
     }
 
@@ -968,6 +1250,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 makeSwitchRow(title: i18n("row.logging.title", "启用日志输出"), subtitle: i18n("row.logging.subtitle", "写入日志文件以便排查问题"), toggle: loggingSwitch),
                 makeButtonRow(title: i18n("row.logFolder.title", "日志目录"), button: openLogFolderButton),
                 makeSwitchRow(title: i18n("row.statusItem.title", "菜单栏显示图标"), subtitle: i18n("row.statusItem.subtitle", "关闭后仅保留主界面与全局功能"), toggle: statusItemSwitch),
+                darkAppearanceRow,
                 makeLanguageRow(),
             ]
         )
@@ -1004,14 +1287,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 makeSwitchRow(title: i18n("row.tracking.title", "开启轨迹"), subtitle: i18n("row.tracking.subtitle", "关闭后不再绘制轨迹"), toggle: trackingSwitch),
                 trailTypeRow,
                 trailColorRow,
+                trailColorFadeRow,
                 waterColorsRow,
+                waterColorsFadeRow,
                 waterHighlightRatioRow,
                 waterPrimaryRatioRow,
                 waterShadowRatioRow,
                 waterMixRandomnessRow,
                 waterMixSeedLockRow,
                 neonColorsRow,
+                neonColorsFadeRow,
+                neonPrimaryWidthRatioRow,
                 rainbowColorsRow,
+                rainbowColorsFadeRow,
                 trailWidthRow,
                 trailLengthRow,
             ]
@@ -1024,14 +1312,29 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             subtitle: i18n("section.trailEffect.subtitle", "轨迹附加特效类型与相关参数"),
             rows: [
                 trailEffectsEnabledRow,
-                trailEffectIntensityRow,
                 trailEffectTypeRow,
+                electricArcDensityRow,
+                electricArcLengthRow,
+                electricArcWidthRow,
+                trailEffectColorRow,
+                trailEffectColorFadeRow,
+                inkDensityRow,
+                inkSizeRow,
+                inkLifetimeRow,
+                inkColorsRow,
+                inkColorsFadeRow,
+                particleDensityRow,
+                particleSizeRow,
+                particleLifetimeRow,
+                particleSpeedRow,
+                particleColorsRow,
+                particleColorsFadeRow,
                 waterSplashSizeRow,
                 waterSplashSpeedRow,
                 waterSplashLifetimeRow,
                 waterSplashDensityRow,
                 waterSplashColorRow,
-                trailEffectColorRow,
+                waterSplashColorFadeRow,
             ]
         )
     }
@@ -1047,9 +1350,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 speedBurstCooldownRow,
                 speedSurgeScaleModeRow,
                 speedBurstAccentColorRow,
+                speedBurstAccentColorFadeRow,
                 speedBurstAccentDurationRow,
                 speedBurstAccentSizeRow,
                 speedBurstLineColorRow,
+                speedBurstLineColorFadeRow,
                 speedBurstDurationRow,
                 speedBurstDurationMinRow,
                 speedBurstDurationMaxRow,
@@ -1075,6 +1380,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             waterImpactSpreadSpeedRow,
             waterImpactLifetimeRow,
             waterImpactDropletSizeRow,
+            clickParticleExplosionDensityRow,
+            clickParticleExplosionSizeRow,
+            clickParticleExplosionLifetimeRow,
+            clickParticleExplosionSpeedRow,
+            clickParticleExplosionColorsRow,
+            clickParticleExplosionColorsFadeRow,
         ]
 
         for button in MouseButtonKind.allCases {
@@ -1093,12 +1404,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             let title = NSTextField(labelWithString: i18n("row.click.perButtonTitle", "%@ 点击效果", button.title))
             title.font = .systemFont(ofSize: 13, weight: .medium)
 
-            let row = NSStackView(views: [title, NSView(), toggle, colorWell])
+            let row = NSStackView(views: [title, colorWell, NSView(), toggle])
             row.orientation = .horizontal
             row.alignment = .centerY
             row.distribution = .fill
             row.spacing = 8
             rows.append(row)
+
+            let fadeKey = ColorFadeSettingKey.clickColor(button)
+            let fadeRow = makeColorFadeRow(for: fadeKey)
+            clickColorFadeRows[button] = fadeRow
+            rows.append(fadeRow)
         }
 
         return makeSectionCard(
@@ -1181,6 +1497,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         container.layer?.cornerRadius = 12
         container.layer?.borderWidth = 0
         container.layer?.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1.0).cgColor
+        sectionCardContainers.append(container)
 
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -1370,6 +1687,67 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         return row
     }
 
+    private func makeColorFadeRow(for key: String) -> NSView {
+        let fadeSwitch: NSSwitch
+        if let existing = colorFadeSwitches[key] {
+            fadeSwitch = existing
+        } else {
+            let created = NSSwitch()
+            created.target = self
+            created.action = #selector(colorFadeSwitchChanged(_:))
+            colorFadeSwitches[key] = created
+            colorFadeSwitchToKey[ObjectIdentifier(created)] = key
+            fadeSwitch = created
+        }
+        let row = makeSwitchRow(
+            title: i18n("row.trail.disableFade", "禁用渐隐/强制实色"),
+            subtitle: i18n("row.trail.disableFade.subtitle", "开启后轨迹与特效颜色不再渐隐，保持你设置的透明度"),
+            toggle: fadeSwitch
+        )
+        colorFadeRows[key] = row
+        return row
+    }
+
+    private func makeDynamicPaletteRow(
+        title: String,
+        colorsStack: NSStackView,
+        addButton: NSButton,
+        removeButton: NSButton
+    ) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        colorsStack.orientation = .horizontal
+        colorsStack.alignment = .centerY
+        colorsStack.distribution = .fill
+        colorsStack.spacing = 6
+        colorsStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        for button in [addButton, removeButton] {
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.setButtonType(.momentaryPushIn)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        }
+
+        let controls = NSStackView(views: [colorsStack, addButton, removeButton])
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.distribution = .fill
+        controls.spacing = 6
+        controls.setContentCompressionResistancePriority(.required, for: .horizontal)
+        controls.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = NSStackView(views: [label, NSView(), controls])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
     private func makePopupRow(title: String, popup: NSPopUpButton) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.setContentHuggingPriority(.required, for: .horizontal)
@@ -1526,7 +1904,41 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         line.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.04).cgColor
         line.translatesAutoresizingMaskIntoConstraints = false
         line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        rowSeparatorViews.append(line)
         return line
+    }
+
+    func refreshAppearanceTheme() {
+        applyAppearanceColors()
+    }
+
+    private func applyAppearanceColors() {
+        let effectiveAppearance = window?.effectiveAppearance ?? NSApp.effectiveAppearance
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let windowBackground = isDark
+            ? NSColor(calibratedWhite: 0.12, alpha: 1.0)
+            : NSColor.windowBackgroundColor
+        let sidebarBackground = isDark
+            ? NSColor(calibratedWhite: 0.16, alpha: 1.0)
+            : NSColor.controlBackgroundColor
+        let cardBackground = isDark
+            ? NSColor(calibratedWhite: 0.18, alpha: 1.0)
+            : NSColor(calibratedWhite: 0.96, alpha: 1.0)
+        let separatorAlpha: CGFloat = isDark ? 0.20 : 0.04
+        let separatorColor = (isDark ? NSColor.white : NSColor.separatorColor)
+            .withAlphaComponent(separatorAlpha)
+
+        rootBackgroundView?.layer?.backgroundColor = windowBackground.cgColor
+        rightPanelContainerView?.layer?.backgroundColor = windowBackground.cgColor
+        sidebarContainerView?.layer?.backgroundColor = sidebarBackground.cgColor
+        sidebarBorderView?.layer?.backgroundColor = separatorColor.cgColor
+        for cardContainer in sectionCardContainers {
+            cardContainer.layer?.backgroundColor = cardBackground.cgColor
+        }
+        for separator in rowSeparatorViews {
+            separator.layer?.backgroundColor = separatorColor.cgColor
+        }
+        refreshSidebarSelectionState()
     }
 
     /// 将 `settings` 同步到所有 UI 控件。
@@ -1541,8 +1953,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         loggingSwitch.state = settings.isLoggingEnabled ? .on : .off
         statusItemSwitch.state = settings.isStatusItemVisible ? .on : .off
         trackingSwitch.state = settings.isTrackingEnabled ? .on : .off
+        darkAppearanceSwitch.state = settings.prefersDarkAppearance ? .on : .off
         speedBurstSwitch.state = settings.speedBurstEnabled ? .on : .off
         trailEffectsSwitch.state = settings.isTrailEffectsEnabled ? .on : .off
+        disableTrailFadeSwitch.state = settings.disableTrailFadeAndForceSolid ? .on : .off
+        for (key, toggle) in colorFadeSwitches {
+            toggle.state = settings.isFadeDisabled(forColorKey: key) ? .on : .off
+        }
         clickEffectsSwitch.state = settings.isClickEffectsEnabled ? .on : .off
         magnifierEnabledSwitch.state = settings.isMagnifierEnabled ? .on : .off
         magnifierShowEffectsSwitch.state = settings.showTrailEffectsWhileMagnifierActive ? .on : .off
@@ -1565,6 +1982,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 : settings.rainbowTrailColors.last ?? .systemBlue
             rainbowColorWells[index].color = color
         }
+        syncEffectPaletteControls()
 
         trailWidthSlider.doubleValue = settings.trailWidth
         trailLengthSlider.doubleValue = settings.trailLengthMilliseconds
@@ -1583,10 +2001,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         speedBurstEffectMaxScaleSlider.doubleValue = settings.speedBurstEffectMaxScale
         speedBurstAccentDurationSlider.doubleValue = settings.speedBurstAccentDurationMilliseconds
         speedBurstAccentSizeSlider.doubleValue = settings.speedBurstAccentSize
+        neonPrimaryWidthRatioSlider.doubleValue = settings.neonPrimaryWidthRatio
         waterHighlightRatioSlider.doubleValue = settings.waterHighlightRatio
         waterPrimaryRatioSlider.doubleValue = settings.waterPrimaryRatio
         waterShadowRatioSlider.doubleValue = settings.waterShadowRatio
         waterMixRandomnessSlider.doubleValue = settings.waterMixRandomness
+        electricArcDensitySlider.doubleValue = settings.electricArcDensity
+        electricArcLengthSlider.doubleValue = settings.electricArcLength
+        electricArcWidthSlider.doubleValue = settings.electricArcWidth
+        inkDensitySlider.doubleValue = settings.inkDensity
+        inkSizeSlider.doubleValue = settings.inkSize
+        inkLifetimeSlider.doubleValue = settings.inkLifetimeMilliseconds
+        particleDensitySlider.doubleValue = settings.particleDensity
+        particleSizeSlider.doubleValue = settings.particleSize
+        particleLifetimeSlider.doubleValue = settings.particleLifetimeMilliseconds
+        particleSpeedSlider.doubleValue = settings.particleSpeed
         waterSplashSizeSlider.doubleValue = settings.waterSplashSize
         waterSplashSpeedSlider.doubleValue = settings.waterSplashSpeed
         waterSplashLifetimeSlider.doubleValue = settings.waterSplashLifetimeMilliseconds
@@ -1598,6 +2027,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         waterImpactSpreadSpeedSlider.doubleValue = settings.waterImpactSpreadSpeed
         waterImpactLifetimeSlider.doubleValue = settings.waterImpactLifetimeMilliseconds
         waterImpactDropletSizeSlider.doubleValue = settings.waterImpactDropletSize
+        clickParticleExplosionDensitySlider.doubleValue = settings.clickParticleExplosionDensity
+        clickParticleExplosionSizeSlider.doubleValue = settings.clickParticleExplosionSize
+        clickParticleExplosionLifetimeSlider.doubleValue = settings.clickParticleExplosionLifetimeMilliseconds
+        clickParticleExplosionSpeedSlider.doubleValue = settings.clickParticleExplosionSpeed
         magnifierRadiusSlider.doubleValue = settings.magnifierRadius
         magnifierZoomSlider.doubleValue = settings.magnifierZoom
         magnifierBorderWidthSlider.doubleValue = settings.magnifierBorderWidth
@@ -1640,6 +2073,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         if presetManagerPanel != nil {
             reloadPresetManagerRows()
         }
+        applyAppearanceColors()
         isSyncingControls = false
         refreshPermissionIndicators()
     }
@@ -1662,43 +2096,78 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private func updateToggleAvailability() {
         let clickEnabled = settings.isClickEffectsEnabled
         let isWaterImpactClick = settings.clickVisualStyle == .waterImpact
-        clickRadiusSlider.isEnabled = clickEnabled && !isWaterImpactClick
-        clickDurationSlider.isEnabled = clickEnabled && !isWaterImpactClick
+        let isParticleExplosionClick = settings.clickVisualStyle == .particleExplosion
+        clickRadiusSlider.isEnabled = clickEnabled && !isWaterImpactClick && !isParticleExplosionClick
+        clickDurationSlider.isEnabled = clickEnabled && !isWaterImpactClick && !isParticleExplosionClick
         waterImpactDensitySlider.isEnabled = clickEnabled && isWaterImpactClick
         waterImpactSpreadSpeedSlider.isEnabled = clickEnabled && isWaterImpactClick
         waterImpactLifetimeSlider.isEnabled = clickEnabled && isWaterImpactClick
         waterImpactDropletSizeSlider.isEnabled = clickEnabled && isWaterImpactClick
+        clickParticleExplosionDensitySlider.isEnabled = clickEnabled && isParticleExplosionClick
+        clickParticleExplosionSizeSlider.isEnabled = clickEnabled && isParticleExplosionClick
+        clickParticleExplosionLifetimeSlider.isEnabled = clickEnabled && isParticleExplosionClick
+        clickParticleExplosionSpeedSlider.isEnabled = clickEnabled && isParticleExplosionClick
         clickStylePopup.isEnabled = clickEnabled
-        setRowVisibility(clickRadiusRow, isVisible: !isWaterImpactClick)
-        setRowVisibility(clickDurationRow, isVisible: !isWaterImpactClick)
+        setRowVisibility(clickRadiusRow, isVisible: !isWaterImpactClick && !isParticleExplosionClick)
+        setRowVisibility(clickDurationRow, isVisible: !isWaterImpactClick && !isParticleExplosionClick)
         setRowVisibility(waterImpactDensityRow, isVisible: isWaterImpactClick)
         setRowVisibility(waterImpactSpreadSpeedRow, isVisible: isWaterImpactClick)
         setRowVisibility(waterImpactLifetimeRow, isVisible: isWaterImpactClick)
         setRowVisibility(waterImpactDropletSizeRow, isVisible: isWaterImpactClick)
+        setRowVisibility(clickParticleExplosionDensityRow, isVisible: isParticleExplosionClick)
+        setRowVisibility(clickParticleExplosionSizeRow, isVisible: isParticleExplosionClick)
+        setRowVisibility(clickParticleExplosionLifetimeRow, isVisible: isParticleExplosionClick)
+        setRowVisibility(clickParticleExplosionSpeedRow, isVisible: isParticleExplosionClick)
+        setRowVisibility(clickParticleExplosionColorsRow, isVisible: isParticleExplosionClick)
+        setRowVisibility(clickParticleExplosionColorsFadeRow, isVisible: isParticleExplosionClick)
+        clickParticleExplosionColorWells.forEach { $0.isEnabled = clickEnabled && isParticleExplosionClick }
+        addClickParticleExplosionColorButton.isEnabled =
+            clickEnabled && isParticleExplosionClick && settings.clickParticleExplosionColors.count < 7
+        removeClickParticleExplosionColorButton.isEnabled =
+            clickEnabled && isParticleExplosionClick && settings.clickParticleExplosionColors.count > 1
+        colorFadeSwitches[ColorFadeSettingKey.clickParticleExplosionColors]?.isEnabled = clickEnabled && isParticleExplosionClick
         for button in MouseButtonKind.allCases {
             let buttonEnabled = settings.effectStyle(for: button).isEnabled
             clickToggleButtons[button]?.isEnabled = clickEnabled
-            clickColorWells[button]?.isEnabled = clickEnabled && buttonEnabled
+            let fadeKey = ColorFadeSettingKey.clickColor(button)
+            let showButtonColorControls = !isParticleExplosionClick
+            clickColorWells[button]?.isHidden = !showButtonColorControls
+            clickColorWells[button]?.isEnabled = clickEnabled && buttonEnabled && showButtonColorControls
+            if let fadeRow = clickColorFadeRows[button] {
+                setRowVisibility(fadeRow, isVisible: showButtonColorControls)
+            }
+            colorFadeSwitches[fadeKey]?.isEnabled = clickEnabled && buttonEnabled && showButtonColorControls
         }
 
         let rainbowEnabled = settings.trailStyle == .rainbow
         rainbowColorWells.forEach { $0.isEnabled = rainbowEnabled }
         let trailEffectsEnabled = settings.isTrailEffectsEnabled
         trailEffectPopup.isEnabled = trailEffectsEnabled
-        trailEffectIntensitySlider.isEnabled = trailEffectsEnabled
         let isWaterStyle = settings.trailStyle == .waterBlade
         setRowVisibility(
             trailColorRow,
             isVisible: settings.trailStyle != .rainbow && settings.trailStyle != .neon && !isWaterStyle
         )
+        setRowVisibility(
+            trailColorFadeRow,
+            isVisible: settings.trailStyle != .rainbow && settings.trailStyle != .neon && !isWaterStyle
+        )
         setRowVisibility(rainbowColorsRow, isVisible: settings.trailStyle == .rainbow)
+        setRowVisibility(rainbowColorsFadeRow, isVisible: settings.trailStyle == .rainbow)
         setRowVisibility(neonColorsRow, isVisible: settings.trailStyle == .neon)
+        setRowVisibility(neonColorsFadeRow, isVisible: settings.trailStyle == .neon)
+        setRowVisibility(neonPrimaryWidthRatioRow, isVisible: settings.trailStyle == .neon)
         setRowVisibility(waterColorsRow, isVisible: isWaterStyle)
+        setRowVisibility(waterColorsFadeRow, isVisible: isWaterStyle)
         setRowVisibility(waterHighlightRatioRow, isVisible: isWaterStyle)
         setRowVisibility(waterPrimaryRatioRow, isVisible: isWaterStyle)
         setRowVisibility(waterShadowRatioRow, isVisible: isWaterStyle)
         setRowVisibility(waterMixRandomnessRow, isVisible: isWaterStyle)
         setRowVisibility(waterMixSeedLockRow, isVisible: isWaterStyle)
+        colorFadeSwitches[ColorFadeSettingKey.trailColor]?.isEnabled = settings.trailStyle != .rainbow && settings.trailStyle != .neon && !isWaterStyle
+        colorFadeSwitches[ColorFadeSettingKey.trailRainbowColors]?.isEnabled = settings.trailStyle == .rainbow
+        colorFadeSwitches[ColorFadeSettingKey.trailNeonColors]?.isEnabled = settings.trailStyle == .neon
+        colorFadeSwitches[ColorFadeSettingKey.trailWaterColors]?.isEnabled = isWaterStyle
         waterHighlightColorWell.isEnabled = isWaterStyle
         waterPrimaryColorWell.isEnabled = isWaterStyle
         waterShadowColorWell.isEnabled = isWaterStyle
@@ -1707,19 +2176,62 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         waterShadowRatioSlider.isEnabled = isWaterStyle
         waterMixRandomnessSlider.isEnabled = isWaterStyle
         waterMixSeedLockSwitch.isEnabled = isWaterStyle
+        neonPrimaryWidthRatioSlider.isEnabled = settings.trailStyle == .neon
+        let isElectricEffect = settings.trailEffectStyle == .electric
+        let isInkEffect = settings.trailEffectStyle == .ink
+        let isParticleEffect = settings.trailEffectStyle == .particles
         let isWaterSplashEffect = settings.trailEffectStyle == .waterSplash
-        setRowVisibility(trailEffectColorRow, isVisible: !isWaterSplashEffect)
-        trailEffectColorWell.isEnabled = trailEffectsEnabled && !isWaterSplashEffect
+        setRowVisibility(trailEffectColorRow, isVisible: isElectricEffect)
+        setRowVisibility(trailEffectColorFadeRow, isVisible: isElectricEffect)
+        trailEffectColorWell.isEnabled = trailEffectsEnabled && isElectricEffect
+        colorFadeSwitches[ColorFadeSettingKey.trailEffectColor]?.isEnabled = trailEffectsEnabled && isElectricEffect
+        setRowVisibility(electricArcDensityRow, isVisible: isElectricEffect)
+        setRowVisibility(electricArcLengthRow, isVisible: isElectricEffect)
+        setRowVisibility(electricArcWidthRow, isVisible: isElectricEffect)
+        electricArcDensitySlider.isEnabled = trailEffectsEnabled && isElectricEffect
+        electricArcLengthSlider.isEnabled = trailEffectsEnabled && isElectricEffect
+        electricArcWidthSlider.isEnabled = trailEffectsEnabled && isElectricEffect
+
+        setRowVisibility(inkDensityRow, isVisible: isInkEffect)
+        setRowVisibility(inkSizeRow, isVisible: isInkEffect)
+        setRowVisibility(inkLifetimeRow, isVisible: isInkEffect)
+        setRowVisibility(inkColorsRow, isVisible: isInkEffect)
+        setRowVisibility(inkColorsFadeRow, isVisible: isInkEffect)
+        inkDensitySlider.isEnabled = trailEffectsEnabled && isInkEffect
+        inkSizeSlider.isEnabled = trailEffectsEnabled && isInkEffect
+        inkLifetimeSlider.isEnabled = trailEffectsEnabled && isInkEffect
+        colorFadeSwitches[ColorFadeSettingKey.trailInkColors]?.isEnabled = trailEffectsEnabled && isInkEffect
+        inkEffectColorWells.forEach { $0.isEnabled = trailEffectsEnabled && isInkEffect }
+        addInkColorButton.isEnabled = trailEffectsEnabled && isInkEffect && settings.inkColors.count < 10
+        removeInkColorButton.isEnabled = trailEffectsEnabled && isInkEffect && settings.inkColors.count > 1
+
+        setRowVisibility(particleDensityRow, isVisible: isParticleEffect)
+        setRowVisibility(particleSizeRow, isVisible: isParticleEffect)
+        setRowVisibility(particleLifetimeRow, isVisible: isParticleEffect)
+        setRowVisibility(particleSpeedRow, isVisible: isParticleEffect)
+        setRowVisibility(particleColorsRow, isVisible: isParticleEffect)
+        setRowVisibility(particleColorsFadeRow, isVisible: isParticleEffect)
+        particleDensitySlider.isEnabled = trailEffectsEnabled && isParticleEffect
+        particleSizeSlider.isEnabled = trailEffectsEnabled && isParticleEffect
+        particleLifetimeSlider.isEnabled = trailEffectsEnabled && isParticleEffect
+        particleSpeedSlider.isEnabled = trailEffectsEnabled && isParticleEffect
+        colorFadeSwitches[ColorFadeSettingKey.trailParticleColors]?.isEnabled = trailEffectsEnabled && isParticleEffect
+        particleEffectColorWells.forEach { $0.isEnabled = trailEffectsEnabled && isParticleEffect }
+        addParticleColorButton.isEnabled = trailEffectsEnabled && isParticleEffect && settings.particleColors.count < 10
+        removeParticleColorButton.isEnabled = trailEffectsEnabled && isParticleEffect && settings.particleColors.count > 1
+
         setRowVisibility(waterSplashSizeRow, isVisible: isWaterSplashEffect)
         setRowVisibility(waterSplashSpeedRow, isVisible: isWaterSplashEffect)
         setRowVisibility(waterSplashLifetimeRow, isVisible: isWaterSplashEffect)
         setRowVisibility(waterSplashDensityRow, isVisible: isWaterSplashEffect)
         setRowVisibility(waterSplashColorRow, isVisible: isWaterSplashEffect)
+        setRowVisibility(waterSplashColorFadeRow, isVisible: isWaterSplashEffect)
         waterSplashSizeSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
         waterSplashSpeedSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
         waterSplashLifetimeSlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
         waterSplashDensitySlider.isEnabled = trailEffectsEnabled && isWaterSplashEffect
         waterSplashColorWell.isEnabled = trailEffectsEnabled && isWaterSplashEffect
+        colorFadeSwitches[ColorFadeSettingKey.trailWaterSplashColor]?.isEnabled = trailEffectsEnabled && isWaterSplashEffect
 
         let speedBurstEnabled = settings.speedBurstEnabled
         let isFirstFlashBurst = settings.speedBurstType == .firstFlash
@@ -1743,25 +2255,35 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         speedBurstAccentSizeSlider.isEnabled = speedBurstEnabled && isFirstFlashBurst
         speedBurstLineColorWell.isEnabled = speedBurstEnabled && isFirstFlashBurst
         speedBurstAccentColorWell.isEnabled = speedBurstEnabled && isFirstFlashBurst
-        setRowVisibility(speedBurstTypeRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstLineColorRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstAccentColorRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstVelocityRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedBurstCooldownRow, isVisible: speedBurstEnabled)
-        setRowVisibility(speedSurgeScaleModeRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstDurationRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstDurationMinRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstDurationMaxRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstAccentDurationRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstAccentSizeRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstJitterRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstMinLengthRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstMaxLengthRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstWidthMultiplierRow, isVisible: speedBurstEnabled && isFirstFlashBurst)
-        setRowVisibility(speedBurstTrailMinScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstTrailMaxScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstEffectMinScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
-        setRowVisibility(speedBurstEffectMaxScaleRow, isVisible: speedBurstEnabled && isWaterSurgeBurst)
+        colorFadeSwitches[ColorFadeSettingKey.speedBurstLineColor]?.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        colorFadeSwitches[ColorFadeSettingKey.speedBurstAccentColor]?.isEnabled = speedBurstEnabled && isFirstFlashBurst
+        setRowVisibility(speedBurstTypeRow, isVisible: true)
+        setRowVisibility(speedBurstLineColorRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstLineColorFadeRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstAccentColorRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstAccentColorFadeRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstVelocityRow, isVisible: true)
+        setRowVisibility(speedBurstCooldownRow, isVisible: true)
+        setRowVisibility(speedSurgeScaleModeRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstDurationRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstDurationMinRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstDurationMaxRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstAccentDurationRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstAccentSizeRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstJitterRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstMinLengthRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstMaxLengthRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstWidthMultiplierRow, isVisible: isFirstFlashBurst)
+        setRowVisibility(speedBurstTrailMinScaleRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstTrailMaxScaleRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstEffectMinScaleRow, isVisible: isWaterSurgeBurst)
+        setRowVisibility(speedBurstEffectMaxScaleRow, isVisible: isWaterSurgeBurst)
+
+        for button in MouseButtonKind.allCases {
+            if let row = clickColorFadeRows[button] {
+                setRowVisibility(row, isVisible: !isParticleExplosionClick)
+            }
+        }
 
         let magnifierEnabled = settings.isMagnifierEnabled
         magnifierShowEffectsSwitch.isEnabled = magnifierEnabled
@@ -1797,10 +2319,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         speedBurstEffectMaxScaleValueLabel.stringValue = "\(rounded(Double(settings.speedBurstEffectMaxScale))) \(multiplier)"
         speedBurstAccentDurationValueLabel.stringValue = "\(Int(settings.speedBurstAccentDurationMilliseconds)) \(ms)"
         speedBurstAccentSizeValueLabel.stringValue = "\(Int(settings.speedBurstAccentSize)) \(px)"
+        neonPrimaryWidthRatioValueLabel.stringValue = "\(Int(settings.neonPrimaryWidthRatio.rounded()))\(percent)"
         waterHighlightRatioValueLabel.stringValue = "\(Int(settings.waterHighlightRatio.rounded()))\(percent)"
         waterPrimaryRatioValueLabel.stringValue = "\(Int(settings.waterPrimaryRatio.rounded()))\(percent)"
         waterShadowRatioValueLabel.stringValue = "\(Int(settings.waterShadowRatio.rounded()))\(percent)"
         waterMixRandomnessValueLabel.stringValue = "\(Int(settings.waterMixRandomness.rounded()))\(percent)"
+        electricArcDensityValueLabel.stringValue = "\(rounded(Double(settings.electricArcDensity))) \(multiplier)"
+        electricArcLengthValueLabel.stringValue = "\(rounded(Double(settings.electricArcLength))) \(px)"
+        electricArcWidthValueLabel.stringValue = "\(rounded(Double(settings.electricArcWidth))) \(px)"
+        inkDensityValueLabel.stringValue = "\(rounded(Double(settings.inkDensity))) \(multiplier)"
+        inkSizeValueLabel.stringValue = "\(rounded(Double(settings.inkSize))) \(multiplier)"
+        inkLifetimeValueLabel.stringValue = "\(Int(settings.inkLifetimeMilliseconds)) \(ms)"
+        particleDensityValueLabel.stringValue = "\(rounded(Double(settings.particleDensity))) \(multiplier)"
+        particleSizeValueLabel.stringValue = "\(rounded(Double(settings.particleSize))) \(multiplier)"
+        particleLifetimeValueLabel.stringValue = "\(Int(settings.particleLifetimeMilliseconds)) \(ms)"
+        particleSpeedValueLabel.stringValue = "\(rounded(Double(settings.particleSpeed))) \(multiplier)"
         waterSplashSizeValueLabel.stringValue = "\(rounded(Double(settings.waterSplashSize))) \(multiplier)"
         waterSplashSpeedValueLabel.stringValue = "\(rounded(Double(settings.waterSplashSpeed))) \(multiplier)"
         waterSplashLifetimeValueLabel.stringValue = "\(Int(settings.waterSplashLifetimeMilliseconds)) \(ms)"
@@ -1812,6 +2345,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         waterImpactSpreadSpeedValueLabel.stringValue = "\(rounded(Double(settings.waterImpactSpreadSpeed))) \(multiplier)"
         waterImpactLifetimeValueLabel.stringValue = "\(Int(settings.waterImpactLifetimeMilliseconds)) \(ms)"
         waterImpactDropletSizeValueLabel.stringValue = "\(rounded(Double(settings.waterImpactDropletSize))) \(multiplier)"
+        clickParticleExplosionDensityValueLabel.stringValue = "\(rounded(Double(settings.clickParticleExplosionDensity))) \(multiplier)"
+        clickParticleExplosionSizeValueLabel.stringValue = "\(rounded(Double(settings.clickParticleExplosionSize))) \(multiplier)"
+        clickParticleExplosionLifetimeValueLabel.stringValue = "\(Int(settings.clickParticleExplosionLifetimeMilliseconds)) \(ms)"
+        clickParticleExplosionSpeedValueLabel.stringValue = "\(rounded(Double(settings.clickParticleExplosionSpeed))) \(multiplier)"
         magnifierRadiusValueLabel.stringValue = "\(Int(settings.magnifierRadius)) \(px)"
         magnifierZoomValueLabel.stringValue = "\(rounded(Double(settings.magnifierZoom))) \(multiplier)"
         magnifierBorderWidthValueLabel.stringValue = "\(rounded(Double(settings.magnifierBorderWidth))) \(px)"
@@ -1849,21 +2386,36 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     @objc
+    private func darkAppearanceSwitchChanged(_ sender: NSSwitch) {
+        settings.prefersDarkAppearance = sender.state == .on
+        publishChanges()
+    }
+
+    @objc
     private func speedBurstSwitchChanged(_ sender: NSSwitch) {
         settings.speedBurstEnabled = sender.state == .on
         syncControlsFromSettings()
-        if let scrollView = contentScrollView, activeSidebarTab == .trailEffects {
-            DispatchQueue.main.async { [weak self, weak scrollView] in
-                guard let self, let scrollView else { return }
-                self.scrollContentToTop(scrollView)
-            }
-        }
         publishChanges()
     }
 
     @objc
     private func trailEffectsSwitchChanged(_ sender: NSSwitch) {
         settings.isTrailEffectsEnabled = sender.state == .on
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func disableTrailFadeSwitchChanged(_ sender: NSSwitch) {
+        settings.disableTrailFadeAndForceSolid = sender.state == .on
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func colorFadeSwitchChanged(_ sender: NSSwitch) {
+        guard let key = colorFadeSwitchToKey[ObjectIdentifier(sender)] else { return }
+        settings.setFadeDisabled(sender.state == .on, forColorKey: key)
         syncControlsFromSettings()
         publishChanges()
     }
@@ -1943,6 +2495,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     @objc
+    private func inkEffectPaletteColorChanged(_ sender: NSColorWell) {
+        guard settings.inkColors.indices.contains(sender.tag) else { return }
+        settings.inkColors[sender.tag] = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func particleEffectPaletteColorChanged(_ sender: NSColorWell) {
+        guard settings.particleColors.indices.contains(sender.tag) else { return }
+        settings.particleColors[sender.tag] = sender.color
+        publishChanges()
+    }
+
+    @objc
+    private func clickParticleExplosionPaletteColorChanged(_ sender: NSColorWell) {
+        guard settings.clickParticleExplosionColors.indices.contains(sender.tag) else { return }
+        settings.clickParticleExplosionColors[sender.tag] = sender.color
+        publishChanges()
+    }
+
+    @objc
     private func waterHighlightRatioSliderChanged(_ sender: NSSlider) {
         applyWaterRatioChange(channel: .highlight, rawValue: sender.doubleValue)
     }
@@ -1960,6 +2533,83 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     @objc
     private func waterMixRandomnessSliderChanged(_ sender: NSSlider) {
         settings.waterMixRandomness = clampWaterMixRandomness(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func neonPrimaryWidthRatioSliderChanged(_ sender: NSSlider) {
+        settings.neonPrimaryWidthRatio = clampNeonPrimaryWidthRatio(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func electricArcDensitySliderChanged(_ sender: NSSlider) {
+        settings.electricArcDensity = clampElectricArcDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func electricArcLengthSliderChanged(_ sender: NSSlider) {
+        settings.electricArcLength = clampElectricArcLength(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func electricArcWidthSliderChanged(_ sender: NSSlider) {
+        settings.electricArcWidth = clampElectricArcWidth(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func inkDensitySliderChanged(_ sender: NSSlider) {
+        settings.inkDensity = clampInkDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func inkSizeSliderChanged(_ sender: NSSlider) {
+        settings.inkSize = clampInkSize(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func inkLifetimeSliderChanged(_ sender: NSSlider) {
+        settings.inkLifetimeMilliseconds = clampInkLifetimeMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func particleDensitySliderChanged(_ sender: NSSlider) {
+        settings.particleDensity = clampParticleDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func particleSizeSliderChanged(_ sender: NSSlider) {
+        settings.particleSize = clampParticleSize(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func particleLifetimeSliderChanged(_ sender: NSSlider) {
+        settings.particleLifetimeMilliseconds = clampParticleLifetimeMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func particleSpeedSliderChanged(_ sender: NSSlider) {
+        settings.particleSpeed = clampParticleSpeed(sender.doubleValue)
         syncControlsFromSettings()
         publishChanges()
     }
@@ -1995,6 +2645,57 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     @objc
     private func trailEffectIntensitySliderChanged(_ sender: NSSlider) {
         settings.trailEffectIntensity = clampTrailEffectIntensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func addInkColorClicked(_ sender: NSButton) {
+        guard settings.inkColors.count < 10 else { return }
+        let nextColor = settings.inkColors.last ?? settings.trailEffectColor
+        settings.inkColors.append(nextColor)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func removeInkColorClicked(_ sender: NSButton) {
+        guard settings.inkColors.count > 1 else { return }
+        settings.inkColors.removeLast()
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func addParticleColorClicked(_ sender: NSButton) {
+        guard settings.particleColors.count < 10 else { return }
+        let nextColor = settings.particleColors.last ?? settings.trailEffectColor
+        settings.particleColors.append(nextColor)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func removeParticleColorClicked(_ sender: NSButton) {
+        guard settings.particleColors.count > 1 else { return }
+        settings.particleColors.removeLast()
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func addClickParticleExplosionColorClicked(_ sender: NSButton) {
+        guard settings.clickParticleExplosionColors.count < 7 else { return }
+        let nextColor = settings.clickParticleExplosionColors.last ?? settings.trailEffectColor
+        settings.clickParticleExplosionColors.append(nextColor)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func removeClickParticleExplosionColorClicked(_ sender: NSButton) {
+        guard settings.clickParticleExplosionColors.count > 1 else { return }
+        settings.clickParticleExplosionColors.removeLast()
         syncControlsFromSettings()
         publishChanges()
     }
@@ -2298,6 +2999,34 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     @objc
+    private func clickParticleExplosionDensitySliderChanged(_ sender: NSSlider) {
+        settings.clickParticleExplosionDensity = clampClickParticleExplosionDensity(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func clickParticleExplosionSizeSliderChanged(_ sender: NSSlider) {
+        settings.clickParticleExplosionSize = clampClickParticleExplosionSize(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func clickParticleExplosionLifetimeSliderChanged(_ sender: NSSlider) {
+        settings.clickParticleExplosionLifetimeMilliseconds = clampClickParticleExplosionLifetimeMilliseconds(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func clickParticleExplosionSpeedSliderChanged(_ sender: NSSlider) {
+        settings.clickParticleExplosionSpeed = clampClickParticleExplosionSpeed(sender.doubleValue)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
     private func magnifierRadiusSliderChanged(_ sender: NSSlider) {
         settings.magnifierRadius = clampMagnifierRadius(sender.doubleValue)
         syncControlsFromSettings()
@@ -2386,18 +3115,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     private func reloadPresetManagerRows() {
         customTrailPresets = AppSettings.loadCustomTrailPresets()
-        var rows: [PresetManagerRow] = [
-            PresetManagerRow(
-                kind: .thunderFirstForm,
-                name: i18n("preset.thunderFirstForm", "雷之呼吸"),
-                updatedAt: AppSettings.thunderPresetUpdatedAt()
-            ),
-            PresetManagerRow(
-                kind: .waterFirstForm,
-                name: i18n("preset.waterFirstForm", "水之呼吸"),
-                updatedAt: AppSettings.waterPresetUpdatedAt()
-            ),
-        ]
+        var rows: [PresetManagerRow] = []
         rows.append(
             contentsOf: customTrailPresets.map { preset in
                 PresetManagerRow(kind: .userPreset(id: preset.id), name: preset.name, updatedAt: preset.updatedAt)

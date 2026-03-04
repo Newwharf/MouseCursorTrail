@@ -216,12 +216,14 @@ enum ClickVisualStyle: String, CaseIterable {
     case solidPulse
     case crossFlare
     case waterImpact
+    case particleExplosion
 
     var title: String {
         switch self {
         case .solidPulse: return i18n("clickStyle.solidPulse", "实心脉冲")
         case .crossFlare: return i18n("clickStyle.crossFlare", "十字闪光")
         case .waterImpact: return i18n("clickStyle.waterImpact", "水击扩散")
+        case .particleExplosion: return i18n("clickStyle.particleExplosion", "粒子爆炸")
         }
     }
 }
@@ -598,6 +600,40 @@ private func decodeColorData(_ data: Data?) -> NSColor? {
     return try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
 }
 
+enum ColorFadeSettingKey {
+    static let trailColor = "trail.color"
+    static let trailRainbowColors = "trail.rainbow.colors"
+    static let trailNeonColors = "trail.neon.colors"
+    static let trailWaterColors = "trail.water.colors"
+    static let trailEffectColor = "trail.effect.color"
+    static let trailInkColors = "trail.effect.ink.colors"
+    static let trailParticleColors = "trail.effect.particle.colors"
+    static let trailWaterSplashColor = "trail.water.splash.color"
+    static let speedBurstLineColor = "speedBurst.line.color"
+    static let speedBurstAccentColor = "speedBurst.accent.color"
+    static let clickParticleExplosionColors = "click.particleExplosion.colors"
+
+    static func clickColor(_ button: MouseButtonKind) -> String {
+        "click.\(button.rawValue).color"
+    }
+
+    static var allKeys: [String] {
+        [
+            trailColor,
+            trailRainbowColors,
+            trailNeonColors,
+            trailWaterColors,
+            trailEffectColor,
+            trailInkColors,
+            trailParticleColors,
+            trailWaterSplashColor,
+            speedBurstLineColor,
+            speedBurstAccentColor,
+            clickParticleExplosionColors,
+        ] + MouseButtonKind.allCases.map(clickColor)
+    }
+}
+
 /// 应用全局设置模型。
 /// 说明：既承载运行态配置，也承载“雷之呼吸·壹之型”预设快照读写能力。
 struct AppSettings {
@@ -608,6 +644,7 @@ struct AppSettings {
     var isClickEffectsEnabled: Bool
     var isMagnifierEnabled: Bool
     var languageCode: String
+    var prefersDarkAppearance: Bool
     var trailColor: NSColor
     var trailEffectColor: NSColor
     var trailStyle: TrailRenderStyle
@@ -615,6 +652,7 @@ struct AppSettings {
     var rainbowTrailColors: [NSColor]
     var neonPrimaryColor: NSColor
     var neonSecondaryColor: NSColor
+    var neonPrimaryWidthRatio: CGFloat
     var waterHighlightColor: NSColor
     var waterPrimaryColor: NSColor
     var waterShadowColor: NSColor
@@ -637,6 +675,11 @@ struct AppSettings {
     var waterImpactSpreadSpeed: CGFloat
     var waterImpactLifetimeMilliseconds: Double
     var waterImpactDropletSize: CGFloat
+    var clickParticleExplosionDensity: CGFloat
+    var clickParticleExplosionSize: CGFloat
+    var clickParticleExplosionLifetimeMilliseconds: Double
+    var clickParticleExplosionSpeed: CGFloat
+    var clickParticleExplosionColors: [NSColor]
     var magnifierRadius: CGFloat
     var magnifierZoom: CGFloat
     var magnifierBorderWidth: CGFloat
@@ -645,7 +688,21 @@ struct AppSettings {
     var showTrailEffectsWhileMagnifierActive: Bool
     var magnifierShortcut: MagnifierShortcut
     var isTrailEffectsEnabled: Bool
+    var disableTrailFadeAndForceSolid: Bool
+    var colorFadeDisabledKeys: Set<String>
     var trailEffectIntensity: CGFloat
+    var electricArcDensity: CGFloat
+    var electricArcLength: CGFloat
+    var electricArcWidth: CGFloat
+    var inkDensity: CGFloat
+    var inkSize: CGFloat
+    var inkLifetimeMilliseconds: Double
+    var inkColors: [NSColor]
+    var particleDensity: CGFloat
+    var particleSize: CGFloat
+    var particleLifetimeMilliseconds: Double
+    var particleSpeed: CGFloat
+    var particleColors: [NSColor]
     var speedBurstEnabled: Bool
     var speedBurstType: SpeedBurstEffectType
     var speedBurstVelocityThreshold: CGFloat
@@ -702,10 +759,25 @@ struct AppSettings {
         "trail.rainbow.colors",
         "trail.neon.primary.color",
         "trail.neon.secondary.color",
+        "trail.neon.primaryWidthRatio",
         "trail.width",
         "trail.length.ms",
         "trail.effects.enabled",
+        "trail.fade.disable",
+        "color.fade.disabled.keys",
         "trail.effect.intensity",
+        "trail.effect.electric.density",
+        "trail.effect.electric.length",
+        "trail.effect.electric.width",
+        "trail.effect.ink.density",
+        "trail.effect.ink.size",
+        "trail.effect.ink.lifetime.ms",
+        "trail.effect.ink.colors",
+        "trail.effect.particle.density",
+        "trail.effect.particle.size",
+        "trail.effect.particle.lifetime.ms",
+        "trail.effect.particle.speed",
+        "trail.effect.particle.colors",
         "speedBurst.enabled",
         "speedBurst.type",
         "speedBurst.velocityThreshold",
@@ -738,6 +810,11 @@ struct AppSettings {
         "click.waterImpact.spreadSpeed",
         "click.waterImpact.lifetime.ms",
         "click.waterImpact.dropletSize",
+        "click.particleExplosion.density",
+        "click.particleExplosion.size",
+        "click.particleExplosion.lifetime.ms",
+        "click.particleExplosion.speed",
+        "click.particleExplosion.colors",
         "click.left.enabled",
         "click.left.color",
         "click.right.enabled",
@@ -754,6 +831,7 @@ struct AppSettings {
         isClickEffectsEnabled: true,
         isMagnifierEnabled: true,
         languageCode: LocalizationManager.shared.defaultLanguageCode,
+        prefersDarkAppearance: false,
         trailColor: colorFromHexRGB(0xFFD84A),
         trailEffectColor: colorFromHexRGB(0xFFB84D),
         trailStyle: .lightning,
@@ -761,6 +839,7 @@ struct AppSettings {
         rainbowTrailColors: [.systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue, .systemPurple],
         neonPrimaryColor: .systemCyan,
         neonSecondaryColor: .systemPink,
+        neonPrimaryWidthRatio: 62,
         waterHighlightColor: colorFromHexRGB(0xD6F6FF),
         waterPrimaryColor: colorFromHexRGB(0x48A8FF),
         waterShadowColor: colorFromHexRGB(0x0C3A8C),
@@ -783,6 +862,15 @@ struct AppSettings {
         waterImpactSpreadSpeed: 1.0,
         waterImpactLifetimeMilliseconds: 320,
         waterImpactDropletSize: 1.0,
+        clickParticleExplosionDensity: 1.0,
+        clickParticleExplosionSize: 1.0,
+        clickParticleExplosionLifetimeMilliseconds: 320,
+        clickParticleExplosionSpeed: 1.0,
+        clickParticleExplosionColors: [
+            colorFromHexRGB(0xFFE47A, alpha: 0.95),
+            colorFromHexRGB(0xFFC35C, alpha: 0.9),
+            colorFromHexRGB(0xFFF4CD, alpha: 0.88),
+        ],
         magnifierRadius: 120,
         magnifierZoom: 2.0,
         magnifierBorderWidth: 3.0,
@@ -791,7 +879,29 @@ struct AppSettings {
         showTrailEffectsWhileMagnifierActive: true,
         magnifierShortcut: .default,
         isTrailEffectsEnabled: true,
+        disableTrailFadeAndForceSolid: false,
+        colorFadeDisabledKeys: [],
         trailEffectIntensity: 82,
+        electricArcDensity: 1.5,
+        electricArcLength: 16,
+        electricArcWidth: 1.6,
+        inkDensity: 1.0,
+        inkSize: 1.0,
+        inkLifetimeMilliseconds: 560,
+        inkColors: [
+            colorFromHexRGB(0x1D1F2A, alpha: 0.72),
+            colorFromHexRGB(0x2E3C58, alpha: 0.66),
+            colorFromHexRGB(0x5F7DA8, alpha: 0.58),
+        ],
+        particleDensity: 1.0,
+        particleSize: 1.0,
+        particleLifetimeMilliseconds: 360,
+        particleSpeed: 1.0,
+        particleColors: [
+            colorFromHexRGB(0xFFE47A, alpha: 0.95),
+            colorFromHexRGB(0xFFC35C, alpha: 0.9),
+            colorFromHexRGB(0xFFF4CD, alpha: 0.88),
+        ],
         speedBurstEnabled: true,
         speedBurstType: .firstFlash,
         speedBurstVelocityThreshold: 1800,
@@ -839,9 +949,62 @@ struct AppSettings {
         waterShadowRatio *= scale
     }
 
+    mutating func normalizeEffectStyleSettings() {
+        neonPrimaryWidthRatio = clampNeonPrimaryWidthRatio(Double(neonPrimaryWidthRatio))
+        electricArcDensity = clampElectricArcDensity(Double(electricArcDensity))
+        electricArcLength = clampElectricArcLength(Double(electricArcLength))
+        electricArcWidth = clampElectricArcWidth(Double(electricArcWidth))
+        inkDensity = clampInkDensity(Double(inkDensity))
+        inkSize = clampInkSize(Double(inkSize))
+        inkLifetimeMilliseconds = clampInkLifetimeMilliseconds(inkLifetimeMilliseconds)
+        particleDensity = clampParticleDensity(Double(particleDensity))
+        particleSize = clampParticleSize(Double(particleSize))
+        particleLifetimeMilliseconds = clampParticleLifetimeMilliseconds(particleLifetimeMilliseconds)
+        particleSpeed = clampParticleSpeed(Double(particleSpeed))
+        clickParticleExplosionDensity = clampClickParticleExplosionDensity(Double(clickParticleExplosionDensity))
+        clickParticleExplosionSize = clampClickParticleExplosionSize(Double(clickParticleExplosionSize))
+        clickParticleExplosionLifetimeMilliseconds = clampClickParticleExplosionLifetimeMilliseconds(clickParticleExplosionLifetimeMilliseconds)
+        clickParticleExplosionSpeed = clampClickParticleExplosionSpeed(Double(clickParticleExplosionSpeed))
+
+        let defaultInkColors = AppSettings.default.inkColors
+        if inkColors.isEmpty {
+            inkColors = defaultInkColors
+        }
+        inkColors = Array(inkColors.prefix(clampEffectPaletteCount(inkColors.count)))
+
+        let defaultParticleColors = AppSettings.default.particleColors
+        if particleColors.isEmpty {
+            particleColors = defaultParticleColors
+        }
+        particleColors = Array(particleColors.prefix(clampEffectPaletteCount(particleColors.count)))
+        let defaultClickParticleColors = AppSettings.default.clickParticleExplosionColors
+        if clickParticleExplosionColors.isEmpty {
+            clickParticleExplosionColors = defaultClickParticleColors
+        }
+        clickParticleExplosionColors = Array(clickParticleExplosionColors.prefix(clampClickParticleExplosionPaletteCount(clickParticleExplosionColors.count)))
+        if disableTrailFadeAndForceSolid {
+            colorFadeDisabledKeys.formUnion(ColorFadeSettingKey.allKeys)
+            disableTrailFadeAndForceSolid = false
+        }
+        colorFadeDisabledKeys = Set(colorFadeDisabledKeys.filter { !$0.isEmpty })
+    }
+
+    func isFadeDisabled(forColorKey key: String) -> Bool {
+        disableTrailFadeAndForceSolid || colorFadeDisabledKeys.contains(key)
+    }
+
+    mutating func setFadeDisabled(_ disabled: Bool, forColorKey key: String) {
+        guard !key.isEmpty else { return }
+        if disabled {
+            colorFadeDisabledKeys.insert(key)
+        } else {
+            colorFadeDisabledKeys.remove(key)
+        }
+    }
+
     /// 应用“雷之呼吸·壹之型”预设。
-    /// Note: 会先加载内置默认值，再覆盖用户保存的同名预设快照。
-    mutating func applyThunderFirstFormPreset() {
+    /// - Parameter applyStoredOverrides: 是否叠加用户保存的同名预设快照。
+    mutating func applyThunderFirstFormPreset(applyStoredOverrides: Bool = true) {
         isTrackingEnabled = true
         isClickEffectsEnabled = true
         isMagnifierEnabled = true
@@ -849,10 +1012,25 @@ struct AppSettings {
         trailEffectStyle = .electric
         trailColor = colorFromHexRGB(0xFFD84A)
         trailEffectColor = colorFromHexRGB(0xFFB84D)
+        neonPrimaryWidthRatio = 62
         trailWidth = 3.4
         trailLengthMilliseconds = 420
         isTrailEffectsEnabled = true
+        disableTrailFadeAndForceSolid = false
+        colorFadeDisabledKeys = []
         trailEffectIntensity = 86
+        electricArcDensity = 2.1
+        electricArcLength = 21
+        electricArcWidth = 1.9
+        inkDensity = 1.0
+        inkSize = 1.0
+        inkLifetimeMilliseconds = 560
+        inkColors = AppSettings.default.inkColors
+        particleDensity = 1.0
+        particleSize = 1.0
+        particleLifetimeMilliseconds = 360
+        particleSpeed = 1.0
+        particleColors = AppSettings.default.particleColors
         speedBurstEnabled = true
         speedBurstType = .firstFlash
         speedBurstVelocityThreshold = 1800
@@ -886,16 +1064,24 @@ struct AppSettings {
         waterImpactSpreadSpeed = 1.0
         waterImpactLifetimeMilliseconds = 320
         waterImpactDropletSize = 1.0
+        clickParticleExplosionDensity = 1.0
+        clickParticleExplosionSize = 1.0
+        clickParticleExplosionLifetimeMilliseconds = 320
+        clickParticleExplosionSpeed = 1.0
+        clickParticleExplosionColors = AppSettings.default.clickParticleExplosionColors
         clickEffects[.left] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFE066))
         clickEffects[.right] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFB74D))
         clickEffects[.middle] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xFFF3B0))
         showTrailEffectsWhileMagnifierActive = true
-        applyStoredThunderPresetOverrides()
+        if applyStoredOverrides {
+            applyStoredThunderPresetOverrides()
+        }
+        normalizeEffectStyleSettings()
     }
 
     /// 应用“水之呼吸·壹之型（夸张）”预设。
-    /// Note: 采用夸张动画风格，强化水刃层次与混色抖动感。
-    mutating func applyWaterFirstFormPreset() {
+    /// - Parameter applyStoredOverrides: 是否叠加用户保存的同名预设快照。
+    mutating func applyWaterFirstFormPreset(applyStoredOverrides: Bool = true) {
         isTrackingEnabled = true
         isClickEffectsEnabled = true
         isMagnifierEnabled = true
@@ -903,6 +1089,7 @@ struct AppSettings {
         trailEffectStyle = .waterSplash
         trailColor = colorFromHexRGB(0x5EB9FF)
         trailEffectColor = colorFromHexRGB(0xA7D9FF)
+        neonPrimaryWidthRatio = 62
         waterHighlightColor = colorFromHexRGB(0xDBF7FF)
         waterPrimaryColor = colorFromHexRGB(0x58B8FF)
         waterShadowColor = colorFromHexRGB(0x0A3A8F)
@@ -919,7 +1106,21 @@ struct AppSettings {
         trailWidth = 4.8
         trailLengthMilliseconds = 520
         isTrailEffectsEnabled = true
+        disableTrailFadeAndForceSolid = false
+        colorFadeDisabledKeys = []
         trailEffectIntensity = 92
+        electricArcDensity = 1.5
+        electricArcLength = 16
+        electricArcWidth = 1.6
+        inkDensity = 1.0
+        inkSize = 1.0
+        inkLifetimeMilliseconds = 560
+        inkColors = AppSettings.default.inkColors
+        particleDensity = 1.0
+        particleSize = 1.0
+        particleLifetimeMilliseconds = 360
+        particleSpeed = 1.0
+        particleColors = AppSettings.default.particleColors
 
         speedBurstEnabled = true
         speedBurstType = .waterSurge
@@ -950,11 +1151,19 @@ struct AppSettings {
         waterImpactSpreadSpeed = 1.35
         waterImpactLifetimeMilliseconds = 430
         waterImpactDropletSize = 1.3
+        clickParticleExplosionDensity = 1.0
+        clickParticleExplosionSize = 1.0
+        clickParticleExplosionLifetimeMilliseconds = 320
+        clickParticleExplosionSpeed = 1.0
+        clickParticleExplosionColors = AppSettings.default.clickParticleExplosionColors
         clickEffects[.left] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0x9EDCFF))
         clickEffects[.right] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0x66BDF3))
         clickEffects[.middle] = ClickEffectStyle(isEnabled: true, color: colorFromHexRGB(0xD5F4FF))
         showTrailEffectsWhileMagnifierActive = true
-        applyStoredWaterPresetOverrides()
+        if applyStoredOverrides {
+            applyStoredWaterPresetOverrides()
+        }
+        normalizeEffectStyleSettings()
         normalizeWaterMixRatios()
     }
 
@@ -1050,7 +1259,7 @@ struct AppSettings {
     static func exportThunderPresetJSON() -> Data? {
         if snapshotEntries(using: thunderPresetKey).isEmpty {
             var fallback = AppSettings.default
-            fallback.applyThunderFirstFormPreset()
+            fallback.applyThunderFirstFormPreset(applyStoredOverrides: false)
             fallback.saveAsThunderFirstFormPreset()
         }
         return exportPresetJSON(name: "Thunder Breathing · First Form", updatedAt: thunderPresetUpdatedAt(), key: thunderPresetKey)
@@ -1059,7 +1268,7 @@ struct AppSettings {
     static func exportWaterPresetJSON() -> Data? {
         if snapshotEntries(using: waterPresetKey).isEmpty {
             var fallback = AppSettings.default
-            fallback.applyWaterFirstFormPreset()
+            fallback.applyWaterFirstFormPreset(applyStoredOverrides: false)
             fallback.saveAsWaterFirstFormPreset()
         }
         return exportPresetJSON(name: "Water Breathing · First Form", updatedAt: waterPresetUpdatedAt(), key: waterPresetKey)
@@ -1166,10 +1375,25 @@ struct AppSettings {
         defaults.set(rainbowTrailColors.compactMap(encodeColorData), forKey: key("trail.rainbow.colors"))
         defaults.set(encodeColorData(neonPrimaryColor), forKey: key("trail.neon.primary.color"))
         defaults.set(encodeColorData(neonSecondaryColor), forKey: key("trail.neon.secondary.color"))
+        defaults.set(Double(neonPrimaryWidthRatio), forKey: key("trail.neon.primaryWidthRatio"))
         defaults.set(Double(trailWidth), forKey: key("trail.width"))
         defaults.set(trailLengthMilliseconds, forKey: key("trail.length.ms"))
         defaults.set(isTrailEffectsEnabled, forKey: key("trail.effects.enabled"))
+        defaults.set(disableTrailFadeAndForceSolid, forKey: key("trail.fade.disable"))
+        defaults.set(Array(colorFadeDisabledKeys).sorted(), forKey: key("color.fade.disabled.keys"))
         defaults.set(Double(trailEffectIntensity), forKey: key("trail.effect.intensity"))
+        defaults.set(Double(electricArcDensity), forKey: key("trail.effect.electric.density"))
+        defaults.set(Double(electricArcLength), forKey: key("trail.effect.electric.length"))
+        defaults.set(Double(electricArcWidth), forKey: key("trail.effect.electric.width"))
+        defaults.set(Double(inkDensity), forKey: key("trail.effect.ink.density"))
+        defaults.set(Double(inkSize), forKey: key("trail.effect.ink.size"))
+        defaults.set(inkLifetimeMilliseconds, forKey: key("trail.effect.ink.lifetime.ms"))
+        defaults.set(inkColors.compactMap(encodeColorData), forKey: key("trail.effect.ink.colors"))
+        defaults.set(Double(particleDensity), forKey: key("trail.effect.particle.density"))
+        defaults.set(Double(particleSize), forKey: key("trail.effect.particle.size"))
+        defaults.set(particleLifetimeMilliseconds, forKey: key("trail.effect.particle.lifetime.ms"))
+        defaults.set(Double(particleSpeed), forKey: key("trail.effect.particle.speed"))
+        defaults.set(particleColors.compactMap(encodeColorData), forKey: key("trail.effect.particle.colors"))
 
         defaults.set(speedBurstEnabled, forKey: key("speedBurst.enabled"))
         defaults.set(speedBurstType.rawValue, forKey: key("speedBurst.type"))
@@ -1204,6 +1428,11 @@ struct AppSettings {
         defaults.set(Double(waterImpactSpreadSpeed), forKey: key("click.waterImpact.spreadSpeed"))
         defaults.set(waterImpactLifetimeMilliseconds, forKey: key("click.waterImpact.lifetime.ms"))
         defaults.set(Double(waterImpactDropletSize), forKey: key("click.waterImpact.dropletSize"))
+        defaults.set(Double(clickParticleExplosionDensity), forKey: key("click.particleExplosion.density"))
+        defaults.set(Double(clickParticleExplosionSize), forKey: key("click.particleExplosion.size"))
+        defaults.set(clickParticleExplosionLifetimeMilliseconds, forKey: key("click.particleExplosion.lifetime.ms"))
+        defaults.set(Double(clickParticleExplosionSpeed), forKey: key("click.particleExplosion.speed"))
+        defaults.set(clickParticleExplosionColors.compactMap(encodeColorData), forKey: key("click.particleExplosion.colors"))
         for button in MouseButtonKind.allCases {
             let style = effectStyle(for: button)
             defaults.set(style.isEnabled, forKey: key("click.\(button.rawValue).enabled"))
@@ -1251,6 +1480,9 @@ struct AppSettings {
         if let value = decodeColorData(defaults.data(forKey: key("trail.neon.secondary.color"))) {
             neonSecondaryColor = value
         }
+        if let value = defaults.object(forKey: key("trail.neon.primaryWidthRatio")) as? Double {
+            neonPrimaryWidthRatio = clampNeonPrimaryWidthRatio(value)
+        }
         if let value = defaults.object(forKey: key("trail.width")) as? Double {
             trailWidth = clampTrailWidth(value)
         }
@@ -1259,6 +1491,12 @@ struct AppSettings {
         }
         if let value = defaults.object(forKey: key("trail.effects.enabled")) as? Bool {
             isTrailEffectsEnabled = value
+        }
+        if let value = defaults.object(forKey: key("trail.fade.disable")) as? Bool {
+            disableTrailFadeAndForceSolid = value
+        }
+        if let values = defaults.array(forKey: key("color.fade.disabled.keys")) as? [String] {
+            colorFadeDisabledKeys = Set(values.filter { !$0.isEmpty })
         }
         if let value = defaults.object(forKey: key("trail.effect.intensity")) as? Double {
             trailEffectIntensity = clampTrailEffectIntensity(value)
@@ -1278,6 +1516,54 @@ struct AppSettings {
             case .high:
                 isTrailEffectsEnabled = true
                 trailEffectIntensity = 100
+            }
+        }
+        if let value = defaults.object(forKey: key("trail.effect.electric.density")) as? Double {
+            electricArcDensity = clampElectricArcDensity(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.electric.length")) as? Double {
+            electricArcLength = clampElectricArcLength(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.electric.width")) as? Double {
+            electricArcWidth = clampElectricArcWidth(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.ink.density")) as? Double {
+            inkDensity = clampInkDensity(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.ink.size")) as? Double {
+            inkSize = clampInkSize(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.ink.lifetime.ms")) as? Double {
+            inkLifetimeMilliseconds = clampInkLifetimeMilliseconds(value)
+        }
+        if let items = defaults.array(forKey: key("trail.effect.ink.colors")) {
+            let colors = items.compactMap { item -> NSColor? in
+                guard let data = item as? Data else { return nil }
+                return decodeColorData(data)
+            }
+            if !colors.isEmpty {
+                inkColors = Array(colors.prefix(clampEffectPaletteCount(colors.count)))
+            }
+        }
+        if let value = defaults.object(forKey: key("trail.effect.particle.density")) as? Double {
+            particleDensity = clampParticleDensity(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.particle.size")) as? Double {
+            particleSize = clampParticleSize(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.particle.lifetime.ms")) as? Double {
+            particleLifetimeMilliseconds = clampParticleLifetimeMilliseconds(value)
+        }
+        if let value = defaults.object(forKey: key("trail.effect.particle.speed")) as? Double {
+            particleSpeed = clampParticleSpeed(value)
+        }
+        if let items = defaults.array(forKey: key("trail.effect.particle.colors")) {
+            let colors = items.compactMap { item -> NSColor? in
+                guard let data = item as? Data else { return nil }
+                return decodeColorData(data)
+            }
+            if !colors.isEmpty {
+                particleColors = Array(colors.prefix(clampEffectPaletteCount(colors.count)))
             }
         }
 
@@ -1402,6 +1688,27 @@ struct AppSettings {
         if let value = defaults.object(forKey: key("click.waterImpact.dropletSize")) as? Double {
             waterImpactDropletSize = clampWaterImpactDropletSize(value)
         }
+        if let value = defaults.object(forKey: key("click.particleExplosion.density")) as? Double {
+            clickParticleExplosionDensity = clampClickParticleExplosionDensity(value)
+        }
+        if let value = defaults.object(forKey: key("click.particleExplosion.size")) as? Double {
+            clickParticleExplosionSize = clampClickParticleExplosionSize(value)
+        }
+        if let value = defaults.object(forKey: key("click.particleExplosion.lifetime.ms")) as? Double {
+            clickParticleExplosionLifetimeMilliseconds = clampClickParticleExplosionLifetimeMilliseconds(value)
+        }
+        if let value = defaults.object(forKey: key("click.particleExplosion.speed")) as? Double {
+            clickParticleExplosionSpeed = clampClickParticleExplosionSpeed(value)
+        }
+        if let items = defaults.array(forKey: key("click.particleExplosion.colors")) {
+            let colors = items.compactMap { item -> NSColor? in
+                guard let data = item as? Data else { return nil }
+                return decodeColorData(data)
+            }
+            if !colors.isEmpty {
+                clickParticleExplosionColors = Array(colors.prefix(clampClickParticleExplosionPaletteCount(colors.count)))
+            }
+        }
         for button in MouseButtonKind.allCases {
             var style = effectStyle(for: button)
             if let enabled = defaults.object(forKey: key("click.\(button.rawValue).enabled")) as? Bool {
@@ -1412,6 +1719,7 @@ struct AppSettings {
             }
             clickEffects[button] = style
         }
+        normalizeEffectStyleSettings()
     }
 }
 
