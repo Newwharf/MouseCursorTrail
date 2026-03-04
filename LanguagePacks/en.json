@@ -72,6 +72,7 @@
     "row.about.appName" : "App Name",
     "row.about.author" : "Author",
     "row.about.email" : "Author Email",
+    "row.about.homepage" : "Homepage",
     "row.about.version" : "Version",
     "row.language.title" : "Language",
     "row.languagePackFolder.title" : "Language Pack Folder",

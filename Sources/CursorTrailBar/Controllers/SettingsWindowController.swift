@@ -206,6 +206,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
     private let aboutAuthorName = "lpp"
     private let aboutAuthorEmail = "ez7268@126.com"
+    private let aboutHomepage = "https://github.com/Newwharf/MouseCursorTrail"
     private let aboutAppVersion = "V 1.0.0"
     private lazy var trailPresetHeaderControl = makeTrailPresetHeaderControl()
 
@@ -979,6 +980,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 makeInfoRow(title: i18n("row.about.appName", "软件名称"), value: currentAppDisplayName()),
                 makeInfoRow(title: i18n("row.about.author", "作者名称"), value: aboutAuthorName),
                 makeInfoRow(title: i18n("row.about.email", "作者邮箱"), value: aboutAuthorEmail),
+                makeInfoRow(title: i18n("row.about.homepage", "主页"), value: aboutHomepage),
                 makeInfoRow(title: i18n("row.about.version", "软件版本号"), value: aboutAppVersion),
             ]
         )

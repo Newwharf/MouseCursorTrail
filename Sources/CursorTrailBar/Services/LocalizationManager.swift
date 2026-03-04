@@ -218,6 +218,7 @@ final class LocalizationManager: @unchecked Sendable {
                 "row.about.appName": "App Name",
                 "row.about.author": "Author",
                 "row.about.email": "Author Email",
+                "row.about.homepage": "Homepage",
                 "row.about.version": "Version",
                 "button.openLogFolder": "Open Log Folder",
                 "button.openLanguagePackFolder": "Open Folder",
