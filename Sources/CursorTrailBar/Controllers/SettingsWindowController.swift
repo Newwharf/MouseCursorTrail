@@ -204,6 +204,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
     private var availableLanguageOptions: [LanguageOption] = []
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
+    private var externalLinkByButtonIdentifier: [ObjectIdentifier: URL] = [:]
     private let aboutAuthorName = "lpp"
     private let aboutAuthorEmail = "ez7268@126.com"
     private let aboutHomepage = "https://github.com/Newwharf/MouseCursorTrail"
@@ -979,8 +980,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             rows: [
                 makeInfoRow(title: i18n("row.about.appName", "软件名称"), value: currentAppDisplayName()),
                 makeInfoRow(title: i18n("row.about.author", "作者名称"), value: aboutAuthorName),
-                makeInfoRow(title: i18n("row.about.email", "作者邮箱"), value: aboutAuthorEmail),
-                makeInfoRow(title: i18n("row.about.homepage", "主页"), value: aboutHomepage),
+                makeLinkRow(
+                    title: i18n("row.about.email", "作者邮箱"),
+                    text: aboutAuthorEmail,
+                    urlString: "mailto:\(aboutAuthorEmail)"
+                ),
+                makeLinkRow(
+                    title: i18n("row.about.homepage", "主页"),
+                    text: aboutHomepage,
+                    urlString: aboutHomepage
+                ),
                 makeInfoRow(title: i18n("row.about.version", "软件版本号"), value: aboutAppVersion),
             ]
         )
@@ -1418,6 +1427,40 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         valueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let row = NSStackView(views: [label, NSView(), valueLabel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 8
+        return row
+    }
+
+    private func makeLinkRow(title: String, text: String, urlString: String) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let linkButton = NSButton(title: text, target: self, action: #selector(openExternalLink(_:)))
+        linkButton.isBordered = false
+        linkButton.font = .systemFont(ofSize: 12)
+        linkButton.setButtonType(.momentaryPushIn)
+        linkButton.alignment = .right
+        linkButton.lineBreakMode = .byTruncatingMiddle
+        linkButton.setContentHuggingPriority(.required, for: .horizontal)
+        linkButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        linkButton.attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .font: NSFont.systemFont(ofSize: 12),
+            ]
+        )
+
+        if let url = URL(string: urlString) {
+            externalLinkByButtonIdentifier[ObjectIdentifier(linkButton)] = url
+        }
+
+        let row = NSStackView(views: [label, NSView(), linkButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.distribution = .fill
@@ -2880,6 +2923,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         NSWorkspace.shared.open(url)
         refreshLanguageOptions(reloadFromDisk: true)
         syncControlsFromSettings()
+    }
+
+    @objc
+    private func openExternalLink(_ sender: NSButton) {
+        guard let url = externalLinkByButtonIdentifier[ObjectIdentifier(sender)] else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func openSystemSettings(urlStrings: [String]) {
