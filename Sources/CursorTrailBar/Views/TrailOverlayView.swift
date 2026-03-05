@@ -1192,19 +1192,6 @@ final class TrailOverlayView: NSView {
         case .velocityBased:
             max(speedBurstTrailMaxScale, speedBurstEffectMaxScale)
         }
-        let accentLifetime = min(max(0.08, duration * 0.52), 0.45)
-        addPulse(
-            at: point,
-            color: speedBurstAccentColor.blended(withFraction: 0.22, of: waterSplashColor) ?? speedBurstAccentColor,
-            fadeKey: ColorFadeSettingKey.speedBurstAccentColor,
-            filled: false,
-            kind: .circle,
-            startRadius: max(4, trailLineWidth * 0.58),
-            endRadius: max(10, trailLineWidth * (2.2 + currentScale * 1.1)),
-            lineWidth: max(1.2, trailLineWidth * 0.46),
-            lifetime: accentLifetime,
-            timestamp: timestamp
-        )
         AppLogger.shared.log(
             "water surge activated: mode=\(speedSurgeScaleMode.rawValue), velocity=\(Int(velocity)) px/s, duration=\(Int(duration * 1000)) ms, scale=\(rounded(Double(currentScale)))x"
         )

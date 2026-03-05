@@ -235,16 +235,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let openScreenCaptureSettingsButton = NSButton(title: "", target: nil, action: nil)
     private let openLogFolderButton = NSButton(title: "", target: nil, action: nil)
     private let openLanguagePacksFolderButton = NSButton(title: "", target: nil, action: nil)
+    private let addRainbowColorButton = NSButton(title: "+", target: nil, action: nil)
+    private let removeRainbowColorButton = NSButton(title: "−", target: nil, action: nil)
     private let addInkColorButton = NSButton(title: "+", target: nil, action: nil)
     private let removeInkColorButton = NSButton(title: "−", target: nil, action: nil)
     private let addParticleColorButton = NSButton(title: "+", target: nil, action: nil)
     private let removeParticleColorButton = NSButton(title: "−", target: nil, action: nil)
     private let addClickParticleExplosionColorButton = NSButton(title: "+", target: nil, action: nil)
     private let removeClickParticleExplosionColorButton = NSButton(title: "−", target: nil, action: nil)
+    private let rainbowColorsStack = NSStackView()
     private let inkColorsStack = NSStackView()
     private let particleColorsStack = NSStackView()
     private let clickParticleExplosionColorsStack = NSStackView()
-    private let rainbowColorWells: [NSColorWell] = (0..<6).map { _ in NSColorWell() }
+    private var rainbowColorWells: [NSColorWell] = []
     private var availableLanguageOptions: [LanguageOption] = []
     private var rowWrapperByRowIdentifier: [ObjectIdentifier: NSView] = [:]
     private var externalLinkByButtonIdentifier: [ObjectIdentifier: URL] = [:]
@@ -293,7 +296,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private lazy var trailEffectColorFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailEffectColor)
     private lazy var neonColorsRow = makeNeonColorsRow()
     private lazy var neonColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailNeonColors)
-    private lazy var rainbowColorsRow = makeRainbowColorsRow()
+    private lazy var rainbowColorsRow = makeDynamicPaletteRow(
+        title: i18n("row.trail.rainbowColors", "彩虹颜色"),
+        colorsStack: rainbowColorsStack,
+        addButton: addRainbowColorButton,
+        removeButton: removeRainbowColorButton
+    )
     private lazy var rainbowColorsFadeRow = makeColorFadeRow(for: ColorFadeSettingKey.trailRainbowColors)
     private lazy var trailEffectTypeRow = makePopupRow(title: i18n("row.trail.effectType", "特效类型"), popup: trailEffectPopup)
     private lazy var trailEffectsEnabledRow = makeSwitchRow(
@@ -979,12 +987,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         languagePopup.action = #selector(languageChanged(_:))
         refreshLanguageOptions(reloadFromDisk: true)
 
-        for (index, colorWell) in rainbowColorWells.enumerated() {
-            colorWell.tag = index
-            colorWell.target = self
-            colorWell.action = #selector(rainbowColorChanged(_:))
-        }
-
         magnifierShortcutButton.target = self
         magnifierShortcutButton.action = #selector(toggleShortcutRecording(_:))
         magnifierShortcutButton.bezelStyle = .rounded
@@ -999,6 +1001,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         openLogFolderButton.action = #selector(openLogFolder(_:))
         openLanguagePacksFolderButton.target = self
         openLanguagePacksFolderButton.action = #selector(openLanguagePacksFolder(_:))
+        addRainbowColorButton.target = self
+        addRainbowColorButton.action = #selector(addRainbowColorClicked(_:))
+        removeRainbowColorButton.target = self
+        removeRainbowColorButton.action = #selector(removeRainbowColorClicked(_:))
         waterMixSeedLockSwitch.target = self
         waterMixSeedLockSwitch.action = #selector(waterMixSeedLockSwitchChanged(_:))
 
@@ -1168,12 +1174,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     private func syncEffectPaletteControls() {
+        settings.rainbowTrailColors = sanitizedEffectPalette(
+            settings.rainbowTrailColors,
+            fallback: AppSettings.default.rainbowTrailColors,
+            minCount: 2,
+            maxCount: 10
+        )
         settings.inkColors = sanitizedEffectPalette(settings.inkColors, fallback: AppSettings.default.inkColors, maxCount: 10)
         settings.particleColors = sanitizedEffectPalette(settings.particleColors, fallback: AppSettings.default.particleColors, maxCount: 10)
         settings.clickParticleExplosionColors = sanitizedEffectPalette(
             settings.clickParticleExplosionColors,
             fallback: AppSettings.default.clickParticleExplosionColors,
             maxCount: 7
+        )
+        syncPaletteWells(
+            colors: settings.rainbowTrailColors,
+            wells: &rainbowColorWells,
+            stack: rainbowColorsStack,
+            action: #selector(rainbowColorChanged(_:)),
+            minCount: 2,
+            maxCount: 10
         )
         syncPaletteWells(
             colors: settings.inkColors,
@@ -1202,11 +1222,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         addParticleColorButton.isEnabled = settings.particleColors.count < 10
         removeClickParticleExplosionColorButton.isEnabled = settings.clickParticleExplosionColors.count > 1
         addClickParticleExplosionColorButton.isEnabled = settings.clickParticleExplosionColors.count < 7
+        removeRainbowColorButton.isEnabled = settings.rainbowTrailColors.count > 2
+        addRainbowColorButton.isEnabled = settings.rainbowTrailColors.count < 10
     }
 
-    private func sanitizedEffectPalette(_ colors: [NSColor], fallback: [NSColor], maxCount: Int) -> [NSColor] {
+    private func sanitizedEffectPalette(
+        _ colors: [NSColor],
+        fallback: [NSColor],
+        minCount: Int = 1,
+        maxCount: Int
+    ) -> [NSColor] {
         let source = colors.isEmpty ? fallback : colors
-        let count = min(maxCount, max(1, source.count))
+        let count = min(maxCount, max(minCount, source.count))
         return Array(source.prefix(count))
     }
 
@@ -1215,9 +1242,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         wells: inout [NSColorWell],
         stack: NSStackView,
         action: Selector,
+        minCount: Int = 1,
         maxCount: Int
     ) {
-        let targetCount = min(maxCount, max(1, colors.count))
+        let targetCount = min(maxCount, max(minCount, colors.count))
         while wells.count > targetCount, let well = wells.popLast() {
             stack.removeArrangedSubview(well)
             well.removeFromSuperview()
@@ -2141,6 +2169,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
         let rainbowEnabled = settings.trailStyle == .rainbow
         rainbowColorWells.forEach { $0.isEnabled = rainbowEnabled }
+        addRainbowColorButton.isEnabled = rainbowEnabled && settings.rainbowTrailColors.count < 10
+        removeRainbowColorButton.isEnabled = rainbowEnabled && settings.rainbowTrailColors.count > 2
         let trailEffectsEnabled = settings.isTrailEffectsEnabled
         trailEffectPopup.isEnabled = trailEffectsEnabled
         let isWaterStyle = settings.trailStyle == .waterBlade
@@ -2810,6 +2840,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     @objc
     private func rainbowColorChanged(_ sender: NSColorWell) {
         settings.rainbowTrailColors = rainbowColorWells.map(\.color)
+        publishChanges()
+    }
+
+    @objc
+    private func addRainbowColorClicked(_ sender: NSButton) {
+        guard settings.rainbowTrailColors.count < 10 else { return }
+        let nextColor = settings.rainbowTrailColors.last ?? settings.trailColor
+        settings.rainbowTrailColors.append(nextColor)
+        syncControlsFromSettings()
+        publishChanges()
+    }
+
+    @objc
+    private func removeRainbowColorClicked(_ sender: NSButton) {
+        guard settings.rainbowTrailColors.count > 2 else { return }
+        settings.rainbowTrailColors.removeLast()
+        syncControlsFromSettings()
         publishChanges()
     }
 
