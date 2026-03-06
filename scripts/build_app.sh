@@ -10,8 +10,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/dist/${APP_NAME}.app"
 EXECUTABLE_PATH="$ROOT_DIR/.build/release/${APP_NAME}"
 APP_ICON_PATH="$ROOT_DIR/assets/AppIcon.icns"
+APP_ICON_SOURCE="${1:-${APP_ICON_SOURCE:-}}"
 
 cd "$ROOT_DIR"
+if [ -n "$APP_ICON_SOURCE" ]; then
+  "$ROOT_DIR/scripts/generate_app_icon.sh" "$APP_ICON_SOURCE"
+fi
 swift build -c release
 
 rm -rf "$APP_DIR"

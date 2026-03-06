@@ -147,11 +147,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 启动或激活时不再自动弹设置窗口；仅由用户显式打开。
     }
 
-    /// Dock 重新激活时的窗口恢复策略。
+    /// 双击 App 图标或 Finder 重新打开应用时，仅在主界面不可见时恢复主界面。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            openSettingsWindow()
-        }
+        reopenMainWindowIfNeeded()
         return true
     }
 
@@ -310,6 +308,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggleTracking() {
         settings.isTrackingEnabled.toggle()
         applySettings(persist: true)
+    }
+
+    private func isMainWindowVisible() -> Bool {
+        settingsWindowController?.window?.isVisible == true
+    }
+
+    private func reopenMainWindowIfNeeded() {
+        guard !isMainWindowVisible() else { return }
+        openSettingsWindow()
     }
 
     @objc
