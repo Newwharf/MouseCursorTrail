@@ -4,9 +4,9 @@ set -euo pipefail
 # 安装开机自启：
 # 生成 LaunchAgents plist，并通过 launchctl 加载当前用户级自启动配置。
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DEFAULT_APP_PATH="$ROOT_DIR/dist/CursorTrailBar.app"
+DEFAULT_APP_PATH="$ROOT_DIR/dist/RainbowCursor.app"
 APP_PATH="${1:-$DEFAULT_APP_PATH}"
-LABEL="com.lihan.cursortrailbar.autostart"
+LABEL="com.lihan.rainbowcursor.autostart"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 if [[ ! -d "$APP_PATH" ]]; then

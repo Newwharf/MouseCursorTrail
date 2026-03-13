@@ -538,7 +538,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             backing: .buffered,
             defer: false
         )
-        window.title = i18n("window.settings.title", "CursorTrailBar 设置")
+        window.title = i18n("window.settings.title", "RainbowCursor 设置")
         window.center()
         window.minSize = NSSize(width: 820, height: 740)
         window.isReleasedWhenClosed = false
@@ -1286,7 +1286,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     private func buildAboutSection() -> NSView {
         return makeSectionCard(
-            title: i18n("section.about.title", "关于 Mouse cursor Trail"),
+            title: i18n("section.about.title", "关于 RainbowCursor"),
             subtitle: i18n("section.about.subtitle", "作者与软件版本信息"),
             rows: [
                 makeInfoRow(title: i18n("row.about.appName", "软件名称"), value: currentAppDisplayName()),
@@ -1885,7 +1885,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         if let bundleName, !bundleName.isEmpty {
             return bundleName
         }
-        return "Mouse cursor Trail"
+        return "RainbowCursor"
     }
 
     private func makeSliderRow(title: String, slider: NSSlider, valueLabel: NSTextField) -> NSView {
@@ -1973,7 +1973,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     /// Important: 通过 `isSyncingControls` 避免同步过程触发二次回写。
     private func syncControlsFromSettings() {
         isSyncingControls = true
-        window?.title = i18n("window.settings.title", "CursorTrailBar 设置")
+        window?.title = i18n("window.settings.title", "RainbowCursor 设置")
         presetManageButton.title = i18n("button.preset.manage", "管理")
         reloadTrailPresetPopup(selecting: selectedTrailPresetOption)
 

@@ -7,7 +7,7 @@ import Foundation
 final class AppLogger: @unchecked Sendable {
     static let shared = AppLogger()
 
-    private let queue = DispatchQueue(label: "com.lihan.cursortrailbar.logger", qos: .utility)
+    private let queue = DispatchQueue(label: "com.lihan.rainbowcursor.logger", qos: .utility)
     private let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -20,7 +20,7 @@ final class AppLogger: @unchecked Sendable {
     private init() {
         let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library")
-        logsDirectoryURL = base.appendingPathComponent("Logs/CursorTrailBar", isDirectory: true)
+        logsDirectoryURL = base.appendingPathComponent("Logs/RainbowCursor", isDirectory: true)
         logFileURL = logsDirectoryURL.appendingPathComponent("app.log")
         queue.async { [logsDirectoryURL] in
             try? FileManager.default.createDirectory(at: logsDirectoryURL, withIntermediateDirectories: true)

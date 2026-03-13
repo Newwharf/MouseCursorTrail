@@ -19,6 +19,26 @@
             "target": "CursorTrailBar",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release CursorTrailBar"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Mouse cursor trail}",
+            "name": "Debug RainbowCursor",
+            "target": "RainbowCursor",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug RainbowCursor"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Mouse cursor trail}",
+            "name": "Release RainbowCursor",
+            "target": "RainbowCursor",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release RainbowCursor"
         }
     ]
 }

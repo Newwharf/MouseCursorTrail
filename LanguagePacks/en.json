@@ -47,9 +47,9 @@
     "menu.hotkeyToggle" : "Toggle Shortcut: %@",
     "menu.openSettings" : "Open Settings…",
     "menu.quit" : "Quit",
-    "menu.quitApp" : "Quit CursorTrailBar",
-    "menu.toggleTrail.off" : "Enable Trail",
-    "menu.toggleTrail.on" : "Disable Trail",
+    "menu.quitApp" : "Quit RainbowCursor",
+    "menu.toggleTrail.off" : "Enable",
+    "menu.toggleTrail.on" : "Disable",
     "menu.window" : "Window",
     "mouse.button" : "Mouse",
     "mouse.left" : "Left",
@@ -134,7 +134,7 @@
     "section.click.subtitle" : "Click effects, radius, duration, and per-button colors",
     "section.click.title" : "Click",
     "section.about.subtitle" : "Author and build information",
-    "section.about.title" : "About Mouse cursor Trail",
+    "section.about.title" : "About RainbowCursor",
     "section.general.subtitle" : "Startup, tray, and app-wide options",
     "section.general.title" : "General",
     "section.magnifier.subtitle" : "Hold shortcut to zoom, style, and permissions",
@@ -173,6 +173,6 @@
     "unit.multiplier" : "x",
     "unit.px" : "px",
     "unit.pxps" : "px/s",
-    "window.settings.title" : "CursorTrailBar Settings"
+    "window.settings.title" : "RainbowCursor Settings"
   }
 }

@@ -5,7 +5,7 @@
 import Foundation
 
 extension Notification.Name {
-    static let cursorTrailBarLanguageDidChange = Notification.Name("cursorTrailBar.language.didChange")
+    static let rainbowCursorLanguageDidChange = Notification.Name("rainbowCursor.language.didChange")
 }
 
 struct LanguageOption {
@@ -71,7 +71,7 @@ final class LocalizationManager: @unchecked Sendable {
         let newCode = supported.contains(code) ? code : defaultLanguageCode
         guard currentLanguageCode != newCode else { return }
         currentLanguageCode = newCode
-        NotificationCenter.default.post(name: .cursorTrailBarLanguageDidChange, object: nil)
+        NotificationCenter.default.post(name: .rainbowCursorLanguageDidChange, object: nil)
     }
 
     func reloadCustomLanguagePacks() {
@@ -122,7 +122,7 @@ final class LocalizationManager: @unchecked Sendable {
     func languagePacksDirectoryURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let appFolder = base.appendingPathComponent("CursorTrailBar", isDirectory: true)
+        let appFolder = base.appendingPathComponent("RainbowCursor", isDirectory: true)
         let packsFolder = appFolder.appendingPathComponent("LanguagePacks", isDirectory: true)
         try? FileManager.default.createDirectory(at: packsFolder, withIntermediateDirectories: true)
         return packsFolder
@@ -190,22 +190,22 @@ final class LocalizationManager: @unchecked Sendable {
                 "sidebar.clickEffects": "Click Effects",
                 "sidebar.magnifier": "Magnifier",
                 "sidebar.general": "Settings",
-                "window.settings.title": "CursorTrailBar Settings",
+                "window.settings.title": "RainbowCursor Settings",
                 "preset.custom": "Custom",
                 "preset.thunderFirstForm": "Thunder Breathing",
                 "preset.waterFirstForm": "Water Breathing",
-                "menu.toggleTrail.on": "Disable Trail",
-                "menu.toggleTrail.off": "Enable Trail",
+                "menu.toggleTrail.on": "Disable",
+                "menu.toggleTrail.off": "Enable",
                 "menu.openSettings": "Open Settings…",
                 "menu.clearTrail": "Clear Trail",
                 "menu.hotkeyToggle": "Toggle Shortcut: %@",
                 "menu.quit": "Quit",
-                "menu.quitApp": "Quit CursorTrailBar",
+                "menu.quitApp": "Quit RainbowCursor",
                 "menu.window": "Window",
                 "menu.close": "Close",
                 "section.general.title": "General",
                 "section.general.subtitle": "Startup, tray, and app-wide options",
-                "section.about.title": "About Mouse cursor Trail",
+                "section.about.title": "About RainbowCursor",
                 "section.about.subtitle": "Author and build information",
                 "row.launchAtLogin.title": "Launch at Login",
                 "row.logging.title": "Enable Logging",

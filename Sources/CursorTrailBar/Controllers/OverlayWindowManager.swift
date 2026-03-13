@@ -14,6 +14,7 @@ final class OverlayWindowManager {
     }
 
     private var overlays: [Overlay] = []
+    private(set) var isEnabled = true
     private(set) var isTrackingEnabled = true
     private var isMagnifierActive = false
     private var settings: AppSettings = .default
@@ -26,6 +27,22 @@ final class OverlayWindowManager {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+    }
+
+    /// 设置 overlay 整体启停状态。
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        if enabled {
+            for overlay in overlays {
+                overlay.window.orderFrontRegardless()
+            }
+        } else {
+            clear()
+            for overlay in overlays {
+                overlay.view.setMagnifierActive(false)
+                overlay.window.orderOut(nil)
+            }
+        }
     }
 
     /// 更新轨迹主开关（同时同步到所有屏幕 overlay）。
@@ -64,6 +81,7 @@ final class OverlayWindowManager {
 
     /// 将输入信号分发到对应屏幕 overlay。
     func process(signal: MouseSignal) {
+        guard isEnabled else { return }
         for overlay in overlays {
             overlay.view.process(signal: signal, in: overlay.window.frame)
         }
@@ -102,7 +120,9 @@ final class OverlayWindowManager {
             view.setMagnifierActive(isMagnifierActive)
             window.contentView = view
 
-            window.orderFrontRegardless()
+            if isEnabled {
+                window.orderFrontRegardless()
+            }
 
             overlays.append(Overlay(window: window, view: view))
         }

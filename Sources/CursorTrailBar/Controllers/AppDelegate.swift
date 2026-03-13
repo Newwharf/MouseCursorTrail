@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var toggleMenuItem: NSMenuItem?
     private var settingsWindowController: SettingsWindowController?
     private var settings: AppSettings = .default
+    private var isAppEnabled = true
     private var isMagnifierShortcutHeld = false
     private var isGlobalShortcutMonitorActive = false
     private var lastAppliedLaunchAtLoginState: Bool?
@@ -71,12 +72,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         globalShortcutMonitor.onInput = { [weak self] input in
             self?.handleShortcutInput(input)
         }
-        isGlobalShortcutMonitorActive = globalShortcutMonitor.start()
-
-        hotKeyManager.onToggle = { [weak self] in
-            self?.toggleTracking()
-        }
-        _ = hotKeyManager.registerHotKey()
 
         applySettings(persist: false, syncWindow: false)
         DispatchQueue.main.async { [weak self] in
@@ -165,9 +160,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainMenu = NSMenu()
 
         let appRootItem = NSMenuItem()
-        let appMenu = NSMenu(title: "CursorTrailBar")
+        let appMenu = NSMenu(title: "RainbowCursor")
         let quitItem = NSMenuItem(
-            title: i18n("menu.quitApp", "退出 CursorTrailBar"),
+            title: i18n("menu.quitApp", "退出 RainbowCursor"),
             action: #selector(quitApp),
             keyEquivalent: "q"
         )
@@ -199,17 +194,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = ""
             button.image = makeStatusBarTemplateIcon()
             button.imagePosition = .imageOnly
-            button.toolTip = "Cursor Trail"
-            button.setAccessibilityLabel("CursorTrailBar")
+            button.toolTip = "RainbowCursor"
+            button.setAccessibilityLabel("RainbowCursor")
         }
 
         let menu = NSMenu()
 
         let toggleItem = NSMenuItem(
-            title: settings.isTrackingEnabled
-                ? i18n("menu.toggleTrail.on", "关闭轨迹显示")
-                : i18n("menu.toggleTrail.off", "开启轨迹显示"),
-            action: #selector(toggleTracking),
+            title: isAppEnabled
+                ? i18n("menu.toggleTrail.on", "停用")
+                : i18n("menu.toggleTrail.off", "启用"),
+            action: #selector(toggleAppEnabled),
             keyEquivalent: ""
         )
         toggleItem.target = self
@@ -219,26 +214,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(
             title: i18n("menu.openSettings", "打开设置…"),
             action: #selector(openSettingsWindow),
-            keyEquivalent: ","
+            keyEquivalent: ""
         )
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let clearItem = NSMenuItem(title: i18n("menu.clearTrail", "清空当前轨迹"), action: #selector(clearTrail), keyEquivalent: "")
-        clearItem.target = self
-        menu.addItem(clearItem)
-
-        let hotkeyHintItem = NSMenuItem(
-            title: i18n("menu.hotkeyToggle", "快捷键开关：%@", hotKeyManager.displayLabel),
-            action: nil,
-            keyEquivalent: ""
-        )
-        hotkeyHintItem.isEnabled = false
-        menu.addItem(hotkeyHintItem)
-
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: i18n("menu.quit", "退出"), action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: i18n("menu.quit", "退出"), action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -305,9 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc
-    private func toggleTracking() {
-        settings.isTrackingEnabled.toggle()
-        applySettings(persist: true)
+    private func toggleAppEnabled() {
+        isAppEnabled.toggle()
+        if !isAppEnabled {
+            isMagnifierShortcutHeld = false
+        }
+        applySettings(persist: false)
+        AppLogger.shared.log("app runtime state changed: enabled=\(isAppEnabled)")
     }
 
     private func isMainWindowVisible() -> Bool {
@@ -344,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         probeInputMonitoringEventTap()
 
         globalShortcutMonitor.stop()
-        isGlobalShortcutMonitorActive = globalShortcutMonitor.start()
+        isGlobalShortcutMonitorActive = startGlobalShortcutMonitorIfPermitted()
         let after = CGPreflightListenEventAccess()
         AppLogger.shared.log("global shortcut monitor restarted after permission request: \(isGlobalShortcutMonitorActive), listenGranted=\(after)")
     }
@@ -474,17 +461,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyPreferredAppearance()
         syncLaunchAtLoginIfNeeded()
         syncStatusItemVisibility()
+        syncRuntimeActivityState()
         overlayManager.setSettings(settings)
-        overlayManager.setTrackingEnabled(settings.isTrackingEnabled)
-        if !settings.isMagnifierEnabled {
+        overlayManager.setEnabled(isAppEnabled)
+        overlayManager.setTrackingEnabled(isAppEnabled && settings.isTrackingEnabled)
+        if !isAppEnabled || !settings.isMagnifierEnabled {
             isMagnifierShortcutHeld = false
             overlayManager.setMagnifierActive(false)
         }
         syncScrollInterceptionState()
 
-        toggleMenuItem?.title = settings.isTrackingEnabled
-            ? i18n("menu.toggleTrail.on", "关闭轨迹显示")
-            : i18n("menu.toggleTrail.off", "开启轨迹显示")
+        toggleMenuItem?.title = isAppEnabled
+            ? i18n("menu.toggleTrail.on", "停用")
+            : i18n("menu.toggleTrail.off", "启用")
 
         if persist {
             settingsStore.saveSettings(settings)
@@ -501,6 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleRawEvent(_ event: NSEvent) {
+        guard isAppEnabled else { return }
         if isGlobalShortcutMonitorActive {
             return
         }
@@ -512,6 +502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleShortcutInput(_ input: ShortcutInputEvent) {
+        guard isAppEnabled else { return }
         if settingsWindowController?.isRecordingShortcut == true {
             return
         }
@@ -541,17 +532,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func syncRuntimeActivityState() {
+        if isAppEnabled {
+            mouseMonitor.start()
+            if !isGlobalShortcutMonitorActive {
+                isGlobalShortcutMonitorActive = startGlobalShortcutMonitorIfPermitted()
+            }
+        } else {
+            mouseMonitor.stop()
+            if isGlobalShortcutMonitorActive {
+                globalShortcutMonitor.stop()
+                isGlobalShortcutMonitorActive = false
+            }
+        }
+    }
+
+    private func startGlobalShortcutMonitorIfPermitted() -> Bool {
+        guard CGPreflightListenEventAccess() else {
+            AppLogger.shared.log("global shortcut monitor skipped: input monitoring permission not granted")
+            return false
+        }
+        return globalShortcutMonitor.start()
+    }
+
     /// 同步滚轮拦截状态。
     /// Note: 仅在“放大镜快捷键按住且放大镜功能开启”时尝试消费滚轮事件。
     private func syncScrollInterceptionState() {
-        let wantsConsume = isMagnifierShortcutHeld && settings.isMagnifierEnabled
+        let wantsConsume = isAppEnabled && isMagnifierShortcutHeld && settings.isMagnifierEnabled
         if wantsConsume {
             if !globalScrollInterceptor.isRunning {
                 let started = globalScrollInterceptor.start()
                 AppLogger.shared.log("global scroll interceptor restarted: \(started)")
-                if !started {
-                    requestAccessibilityPermissionForScrollInterceptionIfNeeded()
-                }
             }
             let canConsume = globalScrollInterceptor.isRunning
             globalScrollInterceptor.setConsumesScroll(canConsume)

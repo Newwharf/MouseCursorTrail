@@ -1,8 +1,8 @@
-# CursorTrailBar
+# RainbowCursor
 
 > macOS 鼠标轨迹 / 点击特效 / 快捷放大镜工具（常驻型菜单栏应用）
 
-`CursorTrailBar` 是一个基于 Swift + AppKit 的 macOS 桌面工具，聚焦于鼠标视觉增强与效率体验：
+`RainbowCursor` 是一个基于 Swift + AppKit 的 macOS 桌面工具，聚焦于鼠标视觉增强与效率体验：
 
 - 轨迹效果（多风格 + 特效 + 加速爆发）
 - 点击效果（按键级独立配置）
@@ -51,7 +51,8 @@
 - **Language**: Swift
 - **UI Framework**: AppKit
 - **Architecture**: MVC（按模块拆分）
-- **Build**: Swift Package Manager（`swift run` / `swift build`）
+- **Build**: Swift Package Manager（可执行目标：`RainbowCursor`）
+- **Source Root**: `Sources/CursorTrailBar`
 
 ---
 
@@ -69,6 +70,12 @@
 
 ```bash
 swift run
+```
+
+或显式指定可执行目标：
+
+```bash
+swift run RainbowCursor
 ```
 
 运行后会自动打开设置窗口；关闭设置窗口后应用继续常驻后台。
@@ -93,15 +100,22 @@ swift build
 ./scripts/build_app.sh
 ```
 
+如需在打包前重新生成应用图标，可额外传入图片路径：
+
+```bash
+./scripts/build_app.sh /path/to/icon-source.png
+```
+
 输出路径：
 
 ```bash
-dist/CursorTrailBar.app
+dist/RainbowCursor.app
 ```
 
 说明：
 
 - 脚本会构建 release 可执行文件并组装 `.app` 目录结构
+- 应用名、Bundle ID 与产物名统一为 `RainbowCursor`
 - 会尝试进行 ad-hoc 签名（失败不阻断）
 - 默认 `LSUIElement=true`（后台工具形态，无 Dock 图标）
 
@@ -117,6 +131,26 @@ dist/CursorTrailBar.app
 
 项目内提供权限状态提示与系统设置跳转入口，建议首次运行后先在设置页完成授权。
 
+## 🔄 开机自启
+
+项目当前提供两种开机启动方式：
+
+- **应用内开机启动**：设置页中直接开启，要求 macOS 13+
+- **LaunchAgent 脚本**：适合打包后手动安装自启动
+
+相关脚本：
+
+```bash
+# 安装当前仓库 dist/RainbowCursor.app 为开机自启
+./scripts/install_launch_agent.sh
+
+# 也可以传入自定义 app 路径
+./scripts/install_launch_agent.sh /Applications/RainbowCursor.app
+
+# 卸载开机自启
+./scripts/uninstall_launch_agent.sh
+```
+
 ---
 
 ## 🌐 多语言与语言包
@@ -124,13 +158,14 @@ dist/CursorTrailBar.app
 - 在设置页 `设置 -> 常规 -> 语言` 可切换语言
 - 在 `设置 -> 常规 -> 语言包目录` 可打开语言包文件夹
 - 首次运行会自动写入 `zh-Hans.json` 与 `en.json` 两个默认语言包
+- 仓库内也提供默认语言包模板：`LanguagePacks/en.json`、`LanguagePacks/zh-Hans.json`
 - 实际可选语言严格由该目录中的语言包文件决定
 - 若目录中读取不到任何语言包文件，应用会回退为**仅简体中文**
 
 语言包目录（自动创建）：
 
 ```text
-~/Library/Application Support/CursorTrailBar/LanguagePacks
+~/Library/Application Support/RainbowCursor/LanguagePacks
 ```
 
 你可以放入自定义 JSON 文件（后缀 `.json`），格式支持两种：
@@ -199,7 +234,7 @@ Sources/CursorTrailBar/
 # 生成图标资源
 ./scripts/generate_app_icon.sh
 
-# 安装开机自启（LaunchAgent）
+# 安装开机自启（LaunchAgent，可传入 app 路径）
 ./scripts/install_launch_agent.sh
 
 # 卸载开机自启
@@ -228,4 +263,6 @@ Sources/CursorTrailBar/
 
 ## 📄 License
 
-请根据你的 GitHub 仓库选择更新（如 `MIT` / `Apache-2.0`）。
+本仓库当前附带 `GNU General Public License v2` 文本。
+
+分发、修改与再发布时，请以根目录 `LICENSE` 文件为准。

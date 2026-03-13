@@ -5,7 +5,7 @@ set -euo pipefail
 # 1) 以 release 模式构建可执行文件；
 # 2) 组装 .app 目录结构与 Info.plist；
 # 3) 尝试进行 ad-hoc 签名（失败时不阻断）。
-APP_NAME="CursorTrailBar"
+APP_NAME="RainbowCursor"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/dist/${APP_NAME}.app"
 EXECUTABLE_PATH="$ROOT_DIR/.build/release/${APP_NAME}"
@@ -31,15 +31,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>CursorTrailBar</string>
+    <string>RainbowCursor</string>
     <key>CFBundleExecutable</key>
-    <string>CursorTrailBar</string>
+    <string>RainbowCursor</string>
     <key>CFBundleIdentifier</key>
-    <string>com.lihan.cursortrailbar</string>
+    <string>com.lihan.rainbowcursor</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleName</key>
-    <string>CursorTrailBar</string>
+    <string>RainbowCursor</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

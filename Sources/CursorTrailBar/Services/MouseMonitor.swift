@@ -25,9 +25,6 @@ final class MouseMonitor {
         .leftMouseDragged,
         .rightMouseDragged,
         .otherMouseDragged,
-        .keyDown,
-        .keyUp,
-        .flagsChanged,
     ]
 
     /// 启动全局与本地鼠标监听。

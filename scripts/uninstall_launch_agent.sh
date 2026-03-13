@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # 卸载开机自启：
-# 从 LaunchAgents 中移除 CursorTrailBar 的用户级自启动配置。
-LABEL="com.lihan.cursortrailbar.autostart"
+# 从 LaunchAgents 中移除 RainbowCursor 的用户级自启动配置。
+LABEL="com.lihan.rainbowcursor.autostart"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 if [[ -f "$PLIST_PATH" ]]; then
