@@ -17,6 +17,7 @@ final class OverlayWindowManager {
     private(set) var isEnabled = true
     private(set) var isTrackingEnabled = true
     private var isMagnifierActive = false
+    private var isPersistentTrailCaptureActive = false
     private var settings: AppSettings = .default
 
     init() {
@@ -50,6 +51,7 @@ final class OverlayWindowManager {
         isTrackingEnabled = enabled
         for overlay in overlays {
             overlay.view.setTrailEnabled(enabled)
+            overlay.view.setPersistentTrailCaptureActive(enabled && isPersistentTrailCaptureActive)
         }
     }
 
@@ -58,6 +60,14 @@ final class OverlayWindowManager {
         isMagnifierActive = settings.isMagnifierEnabled && active
         for overlay in overlays {
             overlay.view.setMagnifierActive(isMagnifierActive)
+        }
+    }
+
+    /// 设置“永久轨迹录制”状态。
+    func setPersistentTrailCaptureActive(_ active: Bool) {
+        isPersistentTrailCaptureActive = active
+        for overlay in overlays {
+            overlay.view.setPersistentTrailCaptureActive(isTrackingEnabled && active)
         }
     }
 
@@ -118,6 +128,7 @@ final class OverlayWindowManager {
             view.applySettings(settings)
             view.setTrailEnabled(isTrackingEnabled)
             view.setMagnifierActive(isMagnifierActive)
+            view.setPersistentTrailCaptureActive(isTrackingEnabled && isPersistentTrailCaptureActive)
             window.contentView = view
 
             if isEnabled {

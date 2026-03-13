@@ -59,6 +59,14 @@ final class SettingsStore {
     private let magnifierShortcutKeyCodeKey = "magnifier.shortcut.keyCode"
     private let magnifierShortcutMouseButtonKey = "magnifier.shortcut.mouseButton"
     private let magnifierShortcutModifiersKey = "magnifier.shortcut.modifiers"
+    private let persistentTrailShortcutKindKey = "trail.persistent.shortcut.kind"
+    private let persistentTrailShortcutKeyCodeKey = "trail.persistent.shortcut.keyCode"
+    private let persistentTrailShortcutMouseButtonKey = "trail.persistent.shortcut.mouseButton"
+    private let persistentTrailShortcutModifiersKey = "trail.persistent.shortcut.modifiers"
+    private let clearPersistentTrailShortcutKindKey = "trail.persistent.clear.shortcut.kind"
+    private let clearPersistentTrailShortcutKeyCodeKey = "trail.persistent.clear.shortcut.keyCode"
+    private let clearPersistentTrailShortcutMouseButtonKey = "trail.persistent.clear.shortcut.mouseButton"
+    private let clearPersistentTrailShortcutModifiersKey = "trail.persistent.clear.shortcut.modifiers"
     private let trailEffectsEnabledKey = "trail.effects.enabled"
     private let trailFadeDisableKey = "trail.fade.disable"
     private let colorFadeDisabledKeysKey = "color.fade.disabled.keys"
@@ -345,21 +353,26 @@ final class SettingsStore {
             defaults.object(forKey: speedBurstAccentSizeKey) as? Double ?? fallback.speedBurstAccentSize
         )
 
-        let shortcutKind = defaults
-            .string(forKey: magnifierShortcutKindKey)
-            .flatMap(ShortcutTriggerKind.init(rawValue:))
-            ?? fallback.magnifierShortcut.triggerKind
-        let shortcutKeyCode = defaults.object(forKey: magnifierShortcutKeyCodeKey) as? UInt16
-        let shortcutMouseButton = defaults
-            .string(forKey: magnifierShortcutMouseButtonKey)
-            .flatMap(MouseButtonKind.init(rawValue:))
-        let shortcutModifiers = defaults.object(forKey: magnifierShortcutModifiersKey) as? UInt
-            ?? fallback.magnifierShortcut.modifiersRaw
-        let magnifierShortcut = MagnifierShortcut(
-            triggerKind: shortcutKind,
-            keyCode: shortcutKind == .keyboard ? (shortcutKeyCode ?? fallback.magnifierShortcut.keyCode) : nil,
-            mouseButton: shortcutKind == .mouse ? (shortcutMouseButton ?? .right) : nil,
-            modifiersRaw: shortcutModifiers
+        let magnifierShortcut = loadShortcut(
+            kindKey: magnifierShortcutKindKey,
+            keyCodeKey: magnifierShortcutKeyCodeKey,
+            mouseButtonKey: magnifierShortcutMouseButtonKey,
+            modifiersKey: magnifierShortcutModifiersKey,
+            fallback: fallback.magnifierShortcut
+        )
+        let persistentTrailShortcut = loadShortcut(
+            kindKey: persistentTrailShortcutKindKey,
+            keyCodeKey: persistentTrailShortcutKeyCodeKey,
+            mouseButtonKey: persistentTrailShortcutMouseButtonKey,
+            modifiersKey: persistentTrailShortcutModifiersKey,
+            fallback: fallback.persistentTrailShortcut
+        )
+        let clearPersistentTrailShortcut = loadShortcut(
+            kindKey: clearPersistentTrailShortcutKindKey,
+            keyCodeKey: clearPersistentTrailShortcutKeyCodeKey,
+            mouseButtonKey: clearPersistentTrailShortcutMouseButtonKey,
+            modifiersKey: clearPersistentTrailShortcutModifiersKey,
+            fallback: fallback.clearPersistentTrailShortcut
         )
 
         var clickEffects: [MouseButtonKind: ClickEffectStyle] = [:]
@@ -429,6 +442,8 @@ final class SettingsStore {
             magnifierShadowOpacity: magnifierShadowOpacity,
             showTrailEffectsWhileMagnifierActive: showTrailEffectsWhileMagnifierActive,
             magnifierShortcut: magnifierShortcut,
+            persistentTrailShortcut: persistentTrailShortcut,
+            clearPersistentTrailShortcut: clearPersistentTrailShortcut,
             isTrailEffectsEnabled: isTrailEffectsEnabled,
             disableTrailFadeAndForceSolid: disableTrailFadeAndForceSolid,
             colorFadeDisabledKeys: colorFadeDisabledKeys,
@@ -523,10 +538,27 @@ final class SettingsStore {
         defaults.set(encodeColor(settings.magnifierBorderColor), forKey: magnifierBorderColorKey)
         defaults.set(Double(settings.magnifierShadowOpacity), forKey: magnifierShadowOpacityKey)
         defaults.set(settings.showTrailEffectsWhileMagnifierActive, forKey: magnifierShowTrailEffectsKey)
-        defaults.set(settings.magnifierShortcut.triggerKind.rawValue, forKey: magnifierShortcutKindKey)
-        defaults.set(settings.magnifierShortcut.keyCode, forKey: magnifierShortcutKeyCodeKey)
-        defaults.set(settings.magnifierShortcut.mouseButton?.rawValue, forKey: magnifierShortcutMouseButtonKey)
-        defaults.set(settings.magnifierShortcut.modifiersRaw, forKey: magnifierShortcutModifiersKey)
+        saveShortcut(
+            settings.magnifierShortcut,
+            kindKey: magnifierShortcutKindKey,
+            keyCodeKey: magnifierShortcutKeyCodeKey,
+            mouseButtonKey: magnifierShortcutMouseButtonKey,
+            modifiersKey: magnifierShortcutModifiersKey
+        )
+        saveShortcut(
+            settings.persistentTrailShortcut,
+            kindKey: persistentTrailShortcutKindKey,
+            keyCodeKey: persistentTrailShortcutKeyCodeKey,
+            mouseButtonKey: persistentTrailShortcutMouseButtonKey,
+            modifiersKey: persistentTrailShortcutModifiersKey
+        )
+        saveShortcut(
+            settings.clearPersistentTrailShortcut,
+            kindKey: clearPersistentTrailShortcutKindKey,
+            keyCodeKey: clearPersistentTrailShortcutKeyCodeKey,
+            mouseButtonKey: clearPersistentTrailShortcutMouseButtonKey,
+            modifiersKey: clearPersistentTrailShortcutModifiersKey
+        )
         defaults.set(settings.isTrailEffectsEnabled, forKey: trailEffectsEnabledKey)
         defaults.set(settings.disableTrailFadeAndForceSolid, forKey: trailFadeDisableKey)
         defaults.set(Array(settings.colorFadeDisabledKeys).sorted(), forKey: colorFadeDisabledKeysKey)
@@ -601,6 +633,43 @@ final class SettingsStore {
             return decodeColor(data)
         }
         return colors.count >= minCount ? colors : nil
+    }
+
+    private func loadShortcut(
+        kindKey: String,
+        keyCodeKey: String,
+        mouseButtonKey: String,
+        modifiersKey: String,
+        fallback: MagnifierShortcut
+    ) -> MagnifierShortcut {
+        let kind = defaults
+            .string(forKey: kindKey)
+            .flatMap(ShortcutTriggerKind.init(rawValue:))
+            ?? fallback.triggerKind
+        let keyCode = defaults.object(forKey: keyCodeKey) as? UInt16
+        let mouseButton = defaults
+            .string(forKey: mouseButtonKey)
+            .flatMap(MouseButtonKind.init(rawValue:))
+        let modifiers = defaults.object(forKey: modifiersKey) as? UInt ?? fallback.modifiersRaw
+        return MagnifierShortcut(
+            triggerKind: kind,
+            keyCode: kind == .keyboard ? (keyCode ?? fallback.keyCode) : nil,
+            mouseButton: kind == .mouse ? (mouseButton ?? fallback.mouseButton ?? .right) : nil,
+            modifiersRaw: modifiers
+        )
+    }
+
+    private func saveShortcut(
+        _ shortcut: MagnifierShortcut,
+        kindKey: String,
+        keyCodeKey: String,
+        mouseButtonKey: String,
+        modifiersKey: String
+    ) {
+        defaults.set(shortcut.triggerKind.rawValue, forKey: kindKey)
+        defaults.set(shortcut.keyCode, forKey: keyCodeKey)
+        defaults.set(shortcut.mouseButton?.rawValue, forKey: mouseButtonKey)
+        defaults.set(shortcut.modifiersRaw, forKey: modifiersKey)
     }
 }
 

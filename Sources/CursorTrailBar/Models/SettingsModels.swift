@@ -407,7 +407,7 @@ struct ShortcutInputEvent {
     }
 }
 
-/// 放大镜快捷键配置。
+/// 快捷键配置。
 /// 注意：修饰键比较采用“包含关系”，允许用户额外按住其他修饰键。
 struct MagnifierShortcut {
     var triggerKind: ShortcutTriggerKind
@@ -424,6 +424,20 @@ struct MagnifierShortcut {
         keyCode: UInt16(kVK_ANSI_M),
         mouseButton: nil,
         modifiersRaw: NSEvent.ModifierFlags([.command, .option]).rawValue
+    )
+
+    static let persistentTrailDefault = MagnifierShortcut(
+        triggerKind: .keyboard,
+        keyCode: UInt16(kVK_ANSI_P),
+        mouseButton: nil,
+        modifiersRaw: NSEvent.ModifierFlags([.control, .option, .command]).rawValue
+    )
+
+    static let clearPersistentTrailDefault = MagnifierShortcut(
+        triggerKind: .keyboard,
+        keyCode: UInt16(kVK_ANSI_C),
+        mouseButton: nil,
+        modifiersRaw: NSEvent.ModifierFlags([.control, .option, .command]).rawValue
     )
 
     /// 从原始 NSEvent 捕获快捷键定义；过滤纯修饰键按下，避免录制无效快捷键。
@@ -687,6 +701,8 @@ struct AppSettings {
     var magnifierShadowOpacity: CGFloat
     var showTrailEffectsWhileMagnifierActive: Bool
     var magnifierShortcut: MagnifierShortcut
+    var persistentTrailShortcut: MagnifierShortcut
+    var clearPersistentTrailShortcut: MagnifierShortcut
     var isTrailEffectsEnabled: Bool
     var disableTrailFadeAndForceSolid: Bool
     var colorFadeDisabledKeys: Set<String>
@@ -890,6 +906,8 @@ struct AppSettings {
         magnifierShadowOpacity: 0.28,
         showTrailEffectsWhileMagnifierActive: true,
         magnifierShortcut: .default,
+        persistentTrailShortcut: .persistentTrailDefault,
+        clearPersistentTrailShortcut: .clearPersistentTrailDefault,
         isTrailEffectsEnabled: true,
         disableTrailFadeAndForceSolid: false,
         colorFadeDisabledKeys: [

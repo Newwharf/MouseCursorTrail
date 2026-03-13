@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: AppSettings = .default
     private var isAppEnabled = true
     private var isMagnifierShortcutHeld = false
+    private var isPersistentTrailShortcutHeld = false
     private var isGlobalShortcutMonitorActive = false
     private var lastAppliedLaunchAtLoginState: Bool?
     private var lastAppliedLanguageCode: String?
@@ -292,6 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isAppEnabled.toggle()
         if !isAppEnabled {
             isMagnifierShortcutHeld = false
+            isPersistentTrailShortcutHeld = false
         }
         applySettings(persist: false)
         AppLogger.shared.log("app runtime state changed: enabled=\(isAppEnabled)")
@@ -469,6 +471,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isMagnifierShortcutHeld = false
             overlayManager.setMagnifierActive(false)
         }
+        if !isAppEnabled || !settings.isTrackingEnabled {
+            isPersistentTrailShortcutHeld = false
+            overlayManager.setPersistentTrailCaptureActive(false)
+        } else {
+            overlayManager.setPersistentTrailCaptureActive(isPersistentTrailShortcutHeld)
+        }
         syncScrollInterceptionState()
 
         toggleMenuItem?.title = isAppEnabled
@@ -506,6 +514,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindowController?.isRecordingShortcut == true {
             return
         }
+        let clearShortcut = settings.clearPersistentTrailShortcut
+        if clearShortcut.matchesPress(input: input) {
+            overlayManager.clear()
+            AppLogger.shared.log("trail clear shortcut pressed")
+        }
+
+        if settings.isTrackingEnabled {
+            let persistentTrailShortcut = settings.persistentTrailShortcut
+            if persistentTrailShortcut.matchesPress(input: input) {
+                if !isPersistentTrailShortcutHeld {
+                    isPersistentTrailShortcutHeld = true
+                    overlayManager.setPersistentTrailCaptureActive(true)
+                    AppLogger.shared.log("persistent trail shortcut pressed")
+                }
+            } else if persistentTrailShortcut.matchesRelease(input: input) {
+                if isPersistentTrailShortcutHeld {
+                    isPersistentTrailShortcutHeld = false
+                    overlayManager.setPersistentTrailCaptureActive(false)
+                    AppLogger.shared.log("persistent trail shortcut released")
+                }
+            }
+        } else if isPersistentTrailShortcutHeld {
+            isPersistentTrailShortcutHeld = false
+            overlayManager.setPersistentTrailCaptureActive(false)
+        }
+
         guard settings.isMagnifierEnabled else {
             if isMagnifierShortcutHeld {
                 isMagnifierShortcutHeld = false

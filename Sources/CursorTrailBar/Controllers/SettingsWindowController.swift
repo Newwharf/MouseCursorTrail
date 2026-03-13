@@ -64,6 +64,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         case userPreset(id: String)
     }
 
+    private enum ShortcutRecordingTarget {
+        case magnifier
+        case persistentTrail
+        case clearPersistentTrail
+    }
+
     private struct PresetManagerRow {
         let kind: PresetManagerRowKind
         let name: String
@@ -72,7 +78,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     var onSettingsChanged: ((AppSettings) -> Void)?
     var onRequestInputMonitoringPermission: (() -> Void)?
-    var isRecordingShortcut: Bool { isShortcutRecording }
+    var isRecordingShortcut: Bool { shortcutRecordingTarget != nil }
 
     private var settings: AppSettings
     private var isSyncingControls = false
@@ -224,7 +230,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let presetManageButton = NSButton(title: "", target: nil, action: nil)
     private let languagePopup = NSPopUpButton()
     private let magnifierShortcutButton = NSButton(title: "", target: nil, action: nil)
+    private let persistentTrailShortcutButton = NSButton(title: "", target: nil, action: nil)
+    private let clearPersistentTrailShortcutButton = NSButton(title: "", target: nil, action: nil)
     private let magnifierShortcutHint = NSTextField(labelWithString: "")
+    private let persistentTrailShortcutHint = NSTextField(labelWithString: "")
+    private let clearPersistentTrailShortcutHint = NSTextField(labelWithString: "")
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
 
     private let inputMonitoringStatusLabel = NSTextField(labelWithString: "")
@@ -313,6 +323,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         title: i18n("row.trail.disableFade", "禁用渐隐/强制实色"),
         subtitle: i18n("row.trail.disableFade.subtitle", "开启后轨迹与特效颜色不再渐隐，保持你设置的透明度"),
         toggle: disableTrailFadeSwitch
+    )
+    private lazy var persistentTrailShortcutRow = makeShortcutRecordRow(
+        title: i18n("row.trail.persistentShortcut", "永久轨迹快捷键"),
+        button: persistentTrailShortcutButton,
+        hintLabel: persistentTrailShortcutHint
+    )
+    private lazy var clearPersistentTrailShortcutRow = makeShortcutRecordRow(
+        title: i18n("row.trail.clearShortcut", "清空轨迹快捷键"),
+        button: clearPersistentTrailShortcutButton,
+        hintLabel: clearPersistentTrailShortcutHint
     )
     private lazy var electricArcDensityRow = makeSliderRow(
         title: i18n("row.trail.electricDensity", "电弧密度"),
@@ -525,7 +545,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     private var rowSeparatorViews: [NSView] = []
 
     private var shortcutCaptureMonitor: Any?
-    private var isShortcutRecording = false
+    private var shortcutRecordingTarget: ShortcutRecordingTarget?
+    private var shortcutRecordingButtonTargets: [ObjectIdentifier: ShortcutRecordingTarget] = [:]
     private var presetManagerRows: [PresetManagerRow] = []
     private var presetManagerPanel: NSPanel?
     private weak var presetManagerTableView: NSTableView?
@@ -646,6 +667,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         ])
 
         let regularSection = buildRegularSection()
+        let permissionsSection = buildPermissionsSection()
         let aboutSection = buildAboutSection()
         let trailSection = buildTrailSection()
         let trailEffectSection = buildTrailEffectSection()
@@ -653,7 +675,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         let clickSection = buildClickSection()
         let magnifierSection = buildMagnifierSection()
         let trailComposite = makeSidebarCompositeContent(sections: [trailSection, trailEffectSection, speedBurstSection])
-        let generalComposite = makeSidebarCompositeContent(sections: [regularSection, aboutSection])
+        let generalComposite = makeSidebarCompositeContent(sections: [regularSection, permissionsSection, aboutSection])
         let contentsByTab: [(SidebarTab, NSView)] = [
             (.trailEffects, trailComposite),
             (.clickEffects, clickSection),
@@ -987,9 +1009,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         languagePopup.action = #selector(languageChanged(_:))
         refreshLanguageOptions(reloadFromDisk: true)
 
-        magnifierShortcutButton.target = self
-        magnifierShortcutButton.action = #selector(toggleShortcutRecording(_:))
-        magnifierShortcutButton.bezelStyle = .rounded
+        for (button, target) in [
+            (magnifierShortcutButton, ShortcutRecordingTarget.magnifier),
+            (persistentTrailShortcutButton, .persistentTrail),
+            (clearPersistentTrailShortcutButton, .clearPersistentTrail),
+        ] {
+            button.target = self
+            button.action = #selector(toggleShortcutRecording(_:))
+            button.bezelStyle = .rounded
+            shortcutRecordingButtonTargets[ObjectIdentifier(button)] = target
+        }
 
         openInputMonitoringSettingsButton.target = self
         openInputMonitoringSettingsButton.action = #selector(openInputMonitoringSettings(_:))
@@ -1009,6 +1038,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         waterMixSeedLockSwitch.action = #selector(waterMixSeedLockSwitchChanged(_:))
 
         magnifierShortcutHint.stringValue = i18n("hint.magnifier.shortcut", "点击录制后按下按键/鼠标键，按住即可触发放大镜。")
+        persistentTrailShortcutHint.stringValue = i18n("hint.trail.persistentShortcut", "按住时，轨迹不会消失，需要先进入APP设置获取相关权限")
+        clearPersistentTrailShortcutHint.stringValue = i18n("hint.trail.clearShortcut", "可清空屏幕上的所有轨迹，需要先进入APP设置获取相关权限")
         openInputMonitoringSettingsButton.title = i18n("button.permission.inputMonitoring", "前往输入监控设置")
         openAccessibilitySettingsButton.title = i18n("button.permission.accessibility", "前往辅助功能设置")
         openScreenCaptureSettingsButton.title = i18n("button.permission.screenCapture", "前往屏幕录制设置")
@@ -1284,6 +1315,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         )
     }
 
+    private func buildPermissionsSection() -> NSView {
+        inputMonitoringStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        accessibilityStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        screenCaptureStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+
+        return makeSectionCard(
+            title: i18n("section.permissions.title", "应用权限"),
+            subtitle: i18n("section.permissions.subtitle", "系统权限状态与设置入口"),
+            rows: [
+                makeStatusActionRow(statusLabel: inputMonitoringStatusLabel, actionButton: openInputMonitoringSettingsButton),
+                makeStatusActionRow(statusLabel: accessibilityStatusLabel, actionButton: openAccessibilitySettingsButton),
+                makeStatusActionRow(statusLabel: screenCaptureStatusLabel, actionButton: openScreenCaptureSettingsButton),
+            ]
+        )
+    }
+
     private func buildAboutSection() -> NSView {
         return makeSectionCard(
             title: i18n("section.about.title", "关于 RainbowCursor"),
@@ -1307,12 +1354,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     private func buildTrailSection() -> NSView {
+        persistentTrailShortcutHint.textColor = .secondaryLabelColor
+        persistentTrailShortcutHint.font = .systemFont(ofSize: 12)
+        clearPersistentTrailShortcutHint.textColor = .secondaryLabelColor
+        clearPersistentTrailShortcutHint.font = .systemFont(ofSize: 12)
+
         return makeSectionCard(
             title: i18n("section.trail.title", "轨迹"),
             subtitle: i18n("section.trail.subtitle", "鼠标轨迹与基础特效参数"),
             headerTrailing: trailPresetHeaderControl,
             rows: [
                 makeSwitchRow(title: i18n("row.tracking.title", "开启轨迹"), subtitle: i18n("row.tracking.subtitle", "关闭后不再绘制轨迹"), toggle: trackingSwitch),
+                persistentTrailShortcutRow,
+                clearPersistentTrailShortcutRow,
                 trailTypeRow,
                 trailColorRow,
                 trailColorFadeRow,
@@ -1453,15 +1507,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
     }
 
     private func buildMagnifierSection() -> NSView {
-        inputMonitoringStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        accessibilityStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        screenCaptureStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         magnifierShortcutHint.textColor = .secondaryLabelColor
         magnifierShortcutHint.font = .systemFont(ofSize: 12)
 
         return makeSectionCard(
             title: i18n("section.magnifier.title", "放大镜"),
-            subtitle: i18n("section.magnifier.subtitle", "快捷键放大、视觉参数与权限入口"),
+            subtitle: i18n("section.magnifier.subtitle", "使用该功能，需要先进入APP设置获取相关权限"),
             rows: [
                 makeSwitchRow(title: i18n("row.magnifier.enabled", "开启放大镜"), subtitle: i18n("row.magnifier.enabled.subtitle", "关闭后快捷键不再触发放大镜"), toggle: magnifierEnabledSwitch),
                 makeSwitchRow(title: i18n("row.magnifier.showEffects", "放大时显示轨迹与特效"), subtitle: i18n("row.magnifier.showEffects.subtitle", "关闭后放大时只显示放大内容"), toggle: magnifierShowEffectsSwitch),
@@ -1470,10 +1521,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
                 makeSliderRow(title: i18n("row.magnifier.borderWidth", "边框粗细"), slider: magnifierBorderWidthSlider, valueLabel: magnifierBorderWidthValueLabel),
                 makeColorRow(title: i18n("row.magnifier.borderColor", "边框颜色"), control: magnifierBorderColorWell),
                 makeSliderRow(title: i18n("row.magnifier.shadow", "阴影强度"), slider: magnifierShadowSlider, valueLabel: magnifierShadowValueLabel),
-                makeShortcutRecordRow(),
-                makeStatusActionRow(statusLabel: inputMonitoringStatusLabel, actionButton: openInputMonitoringSettingsButton),
-                makeStatusActionRow(statusLabel: accessibilityStatusLabel, actionButton: openAccessibilitySettingsButton),
-                makeStatusActionRow(statusLabel: screenCaptureStatusLabel, actionButton: openScreenCaptureSettingsButton),
+                makeShortcutRecordRow(
+                    title: i18n("row.magnifier.shortcut", "放大镜快捷键"),
+                    button: magnifierShortcutButton,
+                    hintLabel: magnifierShortcutHint
+                ),
             ]
         )
     }
@@ -1623,9 +1675,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         return row
     }
 
-    private func makeShortcutRecordRow() -> NSView {
-        let row = makeButtonRow(title: i18n("row.magnifier.shortcut", "放大镜快捷键"), button: magnifierShortcutButton)
-        let stack = NSStackView(views: [row, magnifierShortcutHint])
+    private func makeShortcutRecordRow(title: String, button: NSButton, hintLabel: NSTextField) -> NSView {
+        let row = makeButtonRow(title: title, button: button)
+        let stack = NSStackView(views: [row, hintLabel])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
@@ -2085,9 +2137,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             languagePopup.selectItem(at: index)
         }
 
-        magnifierShortcutButton.title = isShortcutRecording
-            ? i18n("shortcut.recordingPrompt", "按下键盘/鼠标快捷键…(Esc取消)")
-            : settings.magnifierShortcut.displayText
+        magnifierShortcutButton.title = shortcutButtonTitle(
+            for: .magnifier,
+            displayText: settings.magnifierShortcut.displayText
+        )
+        persistentTrailShortcutButton.title = shortcutButtonTitle(
+            for: .persistentTrail,
+            displayText: settings.persistentTrailShortcut.displayText
+        )
+        clearPersistentTrailShortcutButton.title = shortcutButtonTitle(
+            for: .clearPersistentTrail,
+            displayText: settings.clearPersistentTrailShortcut.displayText
+        )
 
         for button in MouseButtonKind.allCases {
             let style = settings.effectStyle(for: button)
@@ -2119,6 +2180,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             launchAtLoginStatusLabel.stringValue = i18n("status.launchAtLogin.disabled", "开机启动已关闭。")
             launchAtLoginStatusLabel.textColor = .secondaryLabelColor
         }
+    }
+
+    private func shortcutButtonTitle(for target: ShortcutRecordingTarget, displayText: String) -> String {
+        shortcutRecordingTarget == target
+            ? i18n("shortcut.recordingPrompt", "按下键盘/鼠标快捷键…(Esc取消)")
+            : displayText
     }
 
     private func updateToggleAvailability() {
@@ -2324,6 +2391,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
         magnifierShadowSlider.isEnabled = magnifierEnabled
         magnifierShortcutButton.isEnabled = magnifierEnabled
         magnifierShortcutHint.textColor = magnifierEnabled ? .secondaryLabelColor : .tertiaryLabelColor
+
+        let trackingEnabled = settings.isTrackingEnabled
+        persistentTrailShortcutButton.isEnabled = trackingEnabled
+        persistentTrailShortcutHint.textColor = trackingEnabled ? .secondaryLabelColor : .tertiaryLabelColor
+        clearPersistentTrailShortcutButton.isEnabled = true
+        clearPersistentTrailShortcutHint.textColor = .secondaryLabelColor
     }
 
     private func updateSliderValueLabels() {
@@ -3564,16 +3637,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     @objc
     private func toggleShortcutRecording(_ sender: NSButton) {
-        if isShortcutRecording {
+        guard let target = shortcutRecordingButtonTargets[ObjectIdentifier(sender)] else { return }
+        if shortcutRecordingTarget == target {
             stopShortcutRecording()
         } else {
-            startShortcutRecording()
+            startShortcutRecording(for: target)
         }
     }
 
-    private func startShortcutRecording() {
-        guard !isShortcutRecording else { return }
-        isShortcutRecording = true
+    private func startShortcutRecording(for target: ShortcutRecordingTarget) {
+        stopShortcutRecording()
+        shortcutRecordingTarget = target
         syncControlsFromSettings()
 
         shortcutCaptureMonitor = NSEvent.addLocalMonitorForEvents(
@@ -3587,7 +3661,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             }
 
             guard let shortcut = MagnifierShortcut.capture(from: event) else { return nil }
-            self.settings.magnifierShortcut = shortcut
+            switch target {
+            case .magnifier:
+                self.settings.magnifierShortcut = shortcut
+            case .persistentTrail:
+                self.settings.persistentTrailShortcut = shortcut
+            case .clearPersistentTrail:
+                self.settings.clearPersistentTrailShortcut = shortcut
+            }
             self.publishChanges()
             self.stopShortcutRecording()
             return nil
@@ -3599,7 +3680,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTa
             NSEvent.removeMonitor(shortcutCaptureMonitor)
             self.shortcutCaptureMonitor = nil
         }
-        isShortcutRecording = false
+        shortcutRecordingTarget = nil
         syncControlsFromSettings()
     }
 

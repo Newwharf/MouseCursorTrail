@@ -16,6 +16,10 @@ final class TrailOverlayView: NSView {
         let trailScale: CGFloat
     }
 
+    private struct PersistentTrailStroke {
+        var points: [NSPoint]
+    }
+
     private struct TrailSample {
         let point: NSPoint
         let alpha: CGFloat
@@ -110,6 +114,7 @@ final class TrailOverlayView: NSView {
     }
 
     private var movePoints: [MovePoint] = []
+    private var persistentTrailStrokes: [PersistentTrailStroke] = []
     private var pulses: [Pulse] = []
     private var particles: [Particle] = []
     private var clickExplosionParticles: [Particle] = []
@@ -122,6 +127,7 @@ final class TrailOverlayView: NSView {
     private var lastAcceptedMoveTimestamp: CFTimeInterval = 0
     private var lastDashBurstTimestamp: CFTimeInterval = -1
     private var pressedButton: PressedButton = .none
+    private var isPersistentTrailCaptureActive = false
     private var refreshTimer: Timer?
     private var cachedMagnifierImage: CGImage?
     private var lastMagnifierCaptureTimestamp: CFTimeInterval = 0
@@ -304,6 +310,9 @@ final class TrailOverlayView: NSView {
     private let minimumMoveDistance: CGFloat = 1.2
     private let refreshInterval: CFTimeInterval = 1.0 / 45.0
     private let magnifierCaptureInterval: CFTimeInterval = 1.0 / 30.0
+    private let maxPersistentStrokeCount = 120
+    private let maxPersistentPointsPerStroke = 2400
+    private let maxPersistentSamplesPerStroke = 4000
 
     private var maxMoveCount: Int {
         max(80, Int(trailLengthSeconds * 260))
@@ -324,16 +333,31 @@ final class TrailOverlayView: NSView {
         isTrailEnabled = enabled
         if !enabled {
             movePoints.removeAll()
+            persistentTrailStrokes.removeAll()
             dashBursts.removeAll()
             lastMoveTimestamp = nil
+            isPersistentTrailCaptureActive = false
             lastDashBurstTimestamp = -1
             activeWaterSurge = nil
             needsDisplay = true
         }
     }
 
+    func setPersistentTrailCaptureActive(_ active: Bool) {
+        let nextActive = isTrailEnabled && active
+        guard nextActive != isPersistentTrailCaptureActive else { return }
+        isPersistentTrailCaptureActive = nextActive
+        if nextActive {
+            beginPersistentTrailStrokeIfNeeded()
+        } else {
+            pruneTrailingEmptyPersistentStroke()
+        }
+        needsDisplay = true
+    }
+
     func clear() {
         movePoints.removeAll()
+        persistentTrailStrokes.removeAll()
         pulses.removeAll()
         particles.removeAll()
         clickExplosionParticles.removeAll()
@@ -347,6 +371,7 @@ final class TrailOverlayView: NSView {
         lastDashBurstTimestamp = -1
         activeWaterSurge = nil
         pressedButton = .none
+        isPersistentTrailCaptureActive = false
         cachedMagnifierImage = nil
         hadAnimatedContentOnLastTick = false
         needsDisplay = true
@@ -523,9 +548,13 @@ final class TrailOverlayView: NSView {
             }
             let surgeScale = currentWaterSurgeScales(at: signal.timestamp, velocity: velocity)
             lastAcceptedMoveTimestamp = signal.timestamp
-            movePoints.append(MovePoint(point: localPoint, timestamp: signal.timestamp, trailScale: surgeScale.trail))
-            if movePoints.count > maxMoveCount {
-                movePoints.removeFirst(movePoints.count - maxMoveCount)
+            if isPersistentTrailCaptureActive {
+                appendPersistentTrailPoint(localPoint)
+            } else {
+                movePoints.append(MovePoint(point: localPoint, timestamp: signal.timestamp, trailScale: surgeScale.trail))
+                if movePoints.count > maxMoveCount {
+                    movePoints.removeFirst(movePoints.count - maxMoveCount)
+                }
             }
             emitTrailEffects(
                 from: lastMovePoint ?? localPoint,
@@ -589,6 +618,7 @@ final class TrailOverlayView: NSView {
         let now = CACurrentMediaTime()
         let canRenderOverlays = !isMagnifierActive || showTrailEffectsWhileMagnifierActive
         if canRenderOverlays && isTrailEnabled {
+            drawPersistentTrails(now: now)
             drawMoveTrail(now: now)
             drawDashBursts(now: now)
         }
@@ -609,10 +639,21 @@ final class TrailOverlayView: NSView {
         drawMagnifier()
     }
 
+    private func drawPersistentTrails(now: CFTimeInterval) {
+        for stroke in persistentTrailStrokes {
+            let samples = makePersistentTrailSamples(from: stroke)
+            guard samples.count > 1 else { continue }
+            drawTrailSamples(samples, now: now, includeElectricCoverage: false)
+        }
+    }
+
     private func drawMoveTrail(now: CFTimeInterval) {
         let samples = makeInterpolatedTrailSamples(now: now)
         guard samples.count > 1 else { return }
+        drawTrailSamples(samples, now: now, includeElectricCoverage: true)
+    }
 
+    private func drawTrailSamples(_ samples: [TrailSample], now: CFTimeInterval, includeElectricCoverage: Bool) {
         switch trailStyle {
         case .ribbon:
             drawRibbonLikeTrail(samples: samples, now: now, style: .ribbon)
@@ -625,7 +666,7 @@ final class TrailOverlayView: NSView {
         case .waterBlade:
             drawWaterBladeTrail(samples: samples, now: now)
         }
-        if trailEffectStyle == .electric, isTrailEffectsEnabled {
+        if includeElectricCoverage, trailEffectStyle == .electric, isTrailEffectsEnabled {
             drawElectricTrailCoverage(samples: samples, now: now)
         }
     }
@@ -1245,6 +1286,50 @@ final class TrailOverlayView: NSView {
         }
     }
 
+    private func beginPersistentTrailStrokeIfNeeded() {
+        if persistentTrailStrokes.last?.points.isEmpty == true {
+            return
+        }
+        var initialPoints: [NSPoint] = []
+        if let cursorPoint {
+            initialPoints.append(cursorPoint)
+        }
+        persistentTrailStrokes.append(PersistentTrailStroke(points: initialPoints))
+        prunePersistentTrailStrokesIfNeeded()
+    }
+
+    private func appendPersistentTrailPoint(_ point: NSPoint) {
+        if persistentTrailStrokes.isEmpty {
+            beginPersistentTrailStrokeIfNeeded()
+        }
+        guard !persistentTrailStrokes.isEmpty else { return }
+        let lastIndex = persistentTrailStrokes.count - 1
+        if let lastPoint = persistentTrailStrokes[lastIndex].points.last {
+            let distance = hypot(point.x - lastPoint.x, point.y - lastPoint.y)
+            if distance < minimumMoveDistance {
+                return
+            }
+        }
+        persistentTrailStrokes[lastIndex].points.append(point)
+        if persistentTrailStrokes[lastIndex].points.count > maxPersistentPointsPerStroke {
+            persistentTrailStrokes[lastIndex].points.removeFirst(
+                persistentTrailStrokes[lastIndex].points.count - maxPersistentPointsPerStroke
+            )
+        }
+    }
+
+    private func prunePersistentTrailStrokesIfNeeded() {
+        if persistentTrailStrokes.count > maxPersistentStrokeCount {
+            persistentTrailStrokes.removeFirst(persistentTrailStrokes.count - maxPersistentStrokeCount)
+        }
+    }
+
+    private func pruneTrailingEmptyPersistentStroke() {
+        while let last = persistentTrailStrokes.last, last.points.count < 2 {
+            persistentTrailStrokes.removeLast()
+        }
+    }
+
     private func makeInterpolatedTrailSamples(now: CFTimeInterval) -> [TrailSample] {
         guard movePoints.count > 1 else { return [] }
         let lifetime = max(0.01, trailLengthSeconds)
@@ -1282,6 +1367,38 @@ final class TrailOverlayView: NSView {
 
         if samples.count > maxSamples {
             return Array(samples.suffix(maxSamples))
+        }
+        return samples
+    }
+
+    private func makePersistentTrailSamples(from stroke: PersistentTrailStroke) -> [TrailSample] {
+        guard stroke.points.count > 1 else { return [] }
+        var samples: [TrailSample] = []
+        samples.reserveCapacity(min(maxPersistentSamplesPerStroke, stroke.points.count * 3))
+        var sampleIndex = 0
+
+        for segment in 1..<stroke.points.count {
+            let first = stroke.points[segment - 1]
+            let second = stroke.points[segment]
+            let dx = second.x - first.x
+            let dy = second.y - first.y
+            let distance = hypot(dx, dy)
+            let interpolationSteps = max(1, min(12, Int(ceil(distance / 5.0))))
+
+            for step in 0...interpolationSteps {
+                if segment > 1 && step == 0 { continue }
+                let fraction = CGFloat(step) / CGFloat(interpolationSteps)
+                let point = NSPoint(
+                    x: first.x + dx * fraction,
+                    y: first.y + dy * fraction
+                )
+                samples.append(TrailSample(point: point, alpha: 1, index: sampleIndex, trailScale: 1))
+                sampleIndex += 1
+            }
+        }
+
+        if samples.count > maxPersistentSamplesPerStroke {
+            return Array(samples.suffix(maxPersistentSamplesPerStroke))
         }
         return samples
     }
